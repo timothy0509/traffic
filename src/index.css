@@ -90,6 +90,14 @@ body {
 .marker-plate.st-slow { border-top-color: var(--color-vms); }
 .marker-plate.st-congested { border-top-color: var(--color-signal); }
 .marker-plate.st-nodata { border-top-color: #a39a83; color: var(--color-muted); }
+.marker-plate.mini {
+  min-width: 26px;
+  height: 26px;
+  font-size: 10px;
+  border-width: 1px;
+  border-top-width: 5px;
+  box-shadow: 2px 2px 0 var(--color-ink);
+}
 .marker-plate.selected {
   background: var(--color-ink);
   color: var(--color-paper);

@@ -1,18 +1,20 @@
 import type { DetectorMeta, LiveResponse } from "./types";
-import { FALLBACK_DETECTORS } from "./fallbackDetectors";
 
-// Pure client-side data layer. Both upstream feeds send
-// `access-control-allow-origin: *`, so the browser fetches them directly
-// with no proxy or backend needed. Works on any static host (Vercel, etc).
+// Shared parsers and fetchers for the Transport Department detector feeds.
+// Both the smart-lamppost feed and the strategic-roads feed publish the same
+// XML/CSV shapes and send `access-control-allow-origin: *`, so the browser
+// fetches them directly with no backend.
 
-const LIVE_URL = "https://resource.data.one.gov.hk/td/traffic-detectors/rawSpeedVol_SLP-all.xml";
-const META_URL = "https://static.data.gov.hk/td/traffic-data-slp/info/traffic_speed_volume_occ_info-slp.csv";
-
-const META_TTL = 24 * 3600_000; // detector locations barely change
-const LIVE_TTL = 45_000; // upstream refreshes every minute
-
-let metaCache: { at: number; data: DetectorMeta[] } | null = null;
-let liveCache: { at: number; data: LiveResponse } | null = null;
+export interface SourceConfig {
+  id: string;
+  label: string;
+  metaUrl: string;
+  liveUrl: string;
+  metaTtlMs: number;
+  liveTtlMs: number;
+  storeKey: string;
+  fallback?: DetectorMeta[];
+}
 
 function num(v: string | undefined): number {
   const n = Number(v);
@@ -77,11 +79,12 @@ export function parseMetaCsv(csv: string): DetectorMeta[] {
   return out;
 }
 
-const LIVE_STORE_KEY = "hk-traffic:last-live";
+const metaCache = new Map<string, { at: number; data: DetectorMeta[] }>();
+const liveCache = new Map<string, { at: number; data: LiveResponse }>();
 
-function readStoredLive(): LiveResponse | null {
+function readStored(key: string): LiveResponse | null {
   try {
-    const raw = localStorage.getItem(LIVE_STORE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const j = JSON.parse(raw) as LiveResponse;
     if (!Array.isArray(j.periods)) return null;
@@ -91,36 +94,38 @@ function readStoredLive(): LiveResponse | null {
   }
 }
 
-export async function fetchMetas(): Promise<DetectorMeta[]> {
-  if (metaCache && Date.now() - metaCache.at < META_TTL) return metaCache.data;
+export async function fetchMetas(cfg: SourceConfig): Promise<DetectorMeta[]> {
+  const hit = metaCache.get(cfg.id);
+  if (hit && Date.now() - hit.at < cfg.metaTtlMs) return hit.data;
   try {
-    const r = await fetch(META_URL);
-    if (!r.ok) throw new Error(`detectors ${r.status}`);
+    const r = await fetch(cfg.metaUrl);
+    if (!r.ok) throw new Error(`${cfg.id} locations ${r.status}`);
     const data = parseMetaCsv(await r.text());
-    if (!data.length) throw new Error("detectors empty");
-    metaCache = { at: Date.now(), data };
+    if (!data.length) throw new Error(`${cfg.id} locations empty`);
+    metaCache.set(cfg.id, { at: Date.now(), data });
     return data;
   } catch {
-    // Bundled copy so the map always renders, even offline.
-    return metaCache?.data ?? FALLBACK_DETECTORS;
+    if (hit) return hit.data;
+    return cfg.fallback ?? [];
   }
 }
 
-export async function fetchLive(): Promise<LiveResponse> {
-  if (liveCache && Date.now() - liveCache.at < LIVE_TTL) return liveCache.data;
-  const r = await fetch(LIVE_URL);
-  if (!r.ok) throw new Error(`live feed ${r.status}`);
+export async function fetchLive(cfg: SourceConfig): Promise<LiveResponse> {
+  const hit = liveCache.get(cfg.id);
+  if (hit && Date.now() - hit.at < cfg.liveTtlMs) return hit.data;
+  const r = await fetch(cfg.liveUrl);
+  if (!r.ok) throw new Error(`${cfg.id} live feed ${r.status}`);
   const data = parseLiveXml(await r.text());
-  if (!data.periods.length) throw new Error("live feed empty");
-  liveCache = { at: Date.now(), data };
+  if (!data.periods.length) throw new Error(`${cfg.id} live feed empty`);
+  liveCache.set(cfg.id, { at: Date.now(), data });
   try {
-    localStorage.setItem(LIVE_STORE_KEY, JSON.stringify(data));
+    localStorage.setItem(cfg.storeKey, JSON.stringify(data));
   } catch {
     // storage full or unavailable, ignore
   }
   return data;
 }
 
-export function getStoredLive(): LiveResponse | null {
-  return liveCache?.data ?? readStoredLive();
+export function getStoredLive(cfg: SourceConfig): LiveResponse | null {
+  return liveCache.get(cfg.id)?.data ?? readStored(cfg.storeKey);
 }

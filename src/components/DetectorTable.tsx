@@ -41,13 +41,12 @@ export default function DetectorTable({ detectors, selectedId, onSelect }: { det
           <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Find</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="id or road…" className="w-full border-2 border-ink bg-paper px-2 py-1 font-readout text-sm outline-none placeholder:text-muted focus:bg-white" />
         </label>
-        <div className="flex gap-1">
-          {districts.map((name) => (
-            <button key={name} onClick={() => setDistrict(name)} className={`border-2 border-ink px-2.5 py-1 font-display text-xs font-bold uppercase tracking-widest ${district === name ? "bg-ink text-paper" : "bg-paper hover:bg-paper-dim"}`}>
-              {name === "All" ? "All" : name.replace("Yau Tsim Mong", "YTM").replace("Kwun Tong", "KT").replace("Wan Chai", "WC")}
-            </button>
-          ))}
-        </div>
+        <label className="flex items-center gap-2">
+          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">District</span>
+          <select value={district} onChange={(e) => setDistrict(e.target.value)} className="border-2 border-ink bg-paper px-2 py-1 font-readout text-sm">
+            {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </label>
         <div className="font-readout text-xs text-muted sm:ml-auto">{rows.length} / {detectors.length} listed</div>
       </div>
       <div className="overflow-x-auto">
