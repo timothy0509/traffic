@@ -2,13 +2,6 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import type { EnrichedDetector } from "../lib/types";
 
-const COLORS: Record<string, string> = {
-  smooth: "#22c55e",
-  slow: "#f59e0b",
-  congested: "#ef4444",
-  nodata: "#64748b",
-};
-
 export default function TrafficMap({ detectors, selectedId, onSelect }: { detectors: EnrichedDetector[]; selectedId: string | null; onSelect: (id: string) => void }) {
   const divRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -17,11 +10,11 @@ export default function TrafficMap({ detectors, selectedId, onSelect }: { detect
   useEffect(() => {
     if (!divRef.current || mapRef.current) return;
     const map = L.map(divRef.current, { zoomControl: true }).setView([22.296, 114.19], 13);
-    // OpenStreetMap tiles: no API key needed. CARTO basemaps now require one.
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19,
     }).addTo(map);
+    map.zoomControl.setPosition("bottomright");
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     return () => {
@@ -35,18 +28,20 @@ export default function TrafficMap({ detectors, selectedId, onSelect }: { detect
     if (!layer) return;
     layer.clearLayers();
     for (const d of detectors) {
-      const color = COLORS[d.status];
-      const label = d.avgSpeed === null ? "–" : String(Math.round(d.avgSpeed));
-      const size = d.id === selectedId ? 44 : 36;
+      const label = d.avgSpeed === null ? "--" : String(Math.round(d.avgSpeed));
       const icon = L.divIcon({
         className: "",
-        html: `<div class="marker-pill" style="width:${size}px;height:${size}px;background:${color}">${label}</div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
+        html: `<div class="marker-plate st-${d.status}${d.id === selectedId ? " selected" : ""}">${label}</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
       });
       const m = L.marker([d.lat, d.lng], { icon, title: d.id });
       m.on("click", () => onSelect(d.id));
-      m.bindTooltip(`<b>${d.id}</b><br/>${d.road_en}<br/>${d.avgSpeed === null ? "no data" : `${Math.round(d.avgSpeed)} km/h · vol ${d.totalVolume}`} `, { direction: "top", offset: [0, -20] });
+      m.bindTooltip(`<b>${d.id}</b> ${d.avgSpeed === null ? "OFFLINE" : `${Math.round(d.avgSpeed)} KM/H · VOL ${d.totalVolume}`}<br/>${d.road_en}`, {
+        direction: "top",
+        offset: [0, -22],
+        className: "plate-tip",
+      });
       layer.addLayer(m);
     }
   }, [detectors, selectedId, onSelect]);
@@ -57,5 +52,5 @@ export default function TrafficMap({ detectors, selectedId, onSelect }: { detect
     if (map && sel) map.panTo([sel.lat, sel.lng], { animate: true });
   }, [selectedId, detectors]);
 
-  return <div ref={divRef} className="h-[420px] w-full overflow-hidden rounded-xl border border-white/10 lg:h-[520px]" />;
+  return <div ref={divRef} className="h-[420px] w-full border-2 border-ink lg:h-[540px]" />;
 }

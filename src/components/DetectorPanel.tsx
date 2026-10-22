@@ -1,84 +1,91 @@
 import type { EnrichedDetector } from "../lib/types";
 import Sparkline from "./Sparkline";
 
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_WORD: Record<EnrichedDetector["status"], string> = {
   smooth: "Smooth",
   slow: "Slow",
   congested: "Congested",
-  nodata: "No data",
+  nodata: "Offline",
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  smooth: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  slow: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  congested: "bg-red-500/15 text-red-300 border-red-500/30",
-  nodata: "bg-slate-500/15 text-slate-300 border-slate-500/30",
+const STATUS_INK: Record<EnrichedDetector["status"], string> = {
+  smooth: "text-go",
+  slow: "text-amber",
+  congested: "text-signal",
+  nodata: "text-muted",
 };
 
 export default function DetectorPanel({ d, history, periodLabel }: { d: EnrichedDetector | null; history: number[]; periodLabel: string }) {
   if (!d) {
     return (
-      <div className="flex h-full min-h-[280px] flex-col justify-center rounded-xl border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-400">
-        Select a detector on the map or in the table to see lane detail.
+      <div className="flex h-full min-h-[280px] flex-col justify-center border-2 border-dashed border-muted p-6">
+        <p className="font-display text-xl font-semibold uppercase tracking-wide">No detector selected</p>
+        <p className="mt-1 font-readout text-xs text-ink-soft">Pick a plate on the map or a row in the ledger.</p>
       </div>
     );
   }
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="flex items-start justify-between gap-3">
+    <article className="border-2 border-ink bg-paper">
+      <header className="border-b-2 border-ink px-4 pb-3 pt-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-readout text-xs font-bold tracking-widest">{d.id}</span>
+          <span className={`font-display text-lg font-bold uppercase tracking-wide ${STATUS_INK[d.status]}`}>{STATUS_WORD[d.status]}</span>
+        </div>
+        <h2 className="mt-1 font-display text-2xl font-semibold leading-none">{d.road_en.replace(/\s*\[AID\d+\]\s*$/, "")}</h2>
+        <p className="mt-1 text-base text-ink-soft">{d.road_tc}</p>
+        <p className="mt-1 font-readout text-[11px] uppercase tracking-widest text-muted">{d.district} · {d.direction}bound</p>
+      </header>
+
+      <div className="flex items-end justify-between px-4 pt-3">
         <div>
-          <div className="text-xs text-slate-400">{d.id} · {d.district} · {d.direction}</div>
-          <h2 className="mt-1 text-lg font-bold leading-snug">{d.road_en}</h2>
-          <div className="text-sm text-slate-400">{d.road_tc}</div>
+          <div className="font-display text-xs font-semibold uppercase tracking-[0.18em] text-muted">Avg speed</div>
+          <div className="font-readout text-6xl font-bold leading-none tabular-nums">
+            {d.avgSpeed === null ? "--" : Math.round(d.avgSpeed)}
+            <span className="text-lg font-medium text-ink-soft"> km/h</span>
+          </div>
         </div>
-        <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_COLOR[d.status]}`}>{STATUS_LABEL[d.status]}</span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-lg bg-white/[0.04] p-3">
-          <div className="text-[11px] uppercase tracking-wide text-slate-400">Avg speed</div>
-          <div className="text-xl font-bold tabular-nums">{d.avgSpeed === null ? "—" : `${Math.round(d.avgSpeed)}`}<span className="text-xs font-normal text-slate-400"> km/h</span></div>
-        </div>
-        <div className="rounded-lg bg-white/[0.04] p-3">
-          <div className="text-[11px] uppercase tracking-wide text-slate-400">Volume</div>
-          <div className="text-xl font-bold tabular-nums">{d.totalVolume}<span className="text-xs font-normal text-slate-400"> veh</span></div>
-        </div>
-        <div className="rounded-lg bg-white/[0.04] p-3">
-          <div className="text-[11px] uppercase tracking-wide text-slate-400">Max occ</div>
-          <div className="text-xl font-bold tabular-nums">{d.maxOccupancy}<span className="text-xs font-normal text-slate-400"> %</span></div>
+        <div className="pb-1 text-right font-readout text-sm tabular-nums">
+          <div><span className="text-2xl font-bold">{d.totalVolume}</span> <span className="text-[11px] uppercase text-muted">veh</span></div>
+          <div><span className="text-2xl font-bold">{d.maxOccupancy}</span><span className="text-[11px] uppercase text-muted"> % occ</span></div>
         </div>
       </div>
 
-      <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
-          <span>Speed trend (this session)</span>
-          <span className="tabular-nums">{periodLabel}</span>
+      <div className="px-4 pt-3">
+        <div className="mb-1 flex items-baseline justify-between">
+          <span className="font-display text-xs font-semibold uppercase tracking-[0.18em] text-muted">Speed trace · session</span>
+          <span className="font-readout text-[11px] tabular-nums text-muted">{periodLabel}</span>
         </div>
-        <Sparkline values={history} width={260} height={40} />
+        <Sparkline values={history} width={280} height={52} />
       </div>
 
-      <table className="mt-4 w-full text-sm">
+      <table className="mt-3 w-full">
         <thead>
-          <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-            <th className="py-1">Lane</th>
-            <th className="py-1 text-right">Speed</th>
-            <th className="py-1 text-right">Occ</th>
-            <th className="py-1 text-right">Vol</th>
+          <tr className="border-y-2 border-ink font-display text-xs font-semibold uppercase tracking-[0.18em] text-ink-soft">
+            <th className="px-4 py-1 text-left">Lane</th>
+            <th className="px-2 py-1 text-right">km/h</th>
+            <th className="px-2 py-1 text-right">Occ</th>
+            <th className="px-4 py-1 text-right">Vol</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="font-readout text-sm tabular-nums">
           {d.reading?.lanes.map((l) => (
-            <tr key={l.lane_id} className="border-t border-white/5 tabular-nums">
-              <td className="py-1.5">{l.lane_id}{l.valid ? "" : " (stale)"}</td>
-              <td className="py-1.5 text-right">{l.speed} km/h</td>
-              <td className="py-1.5 text-right">{l.occupancy}%</td>
-              <td className="py-1.5 text-right">{l.volume}</td>
+            <tr key={l.lane_id} className="border-b border-line last:border-b-2 last:border-ink">
+              <td className="px-4 py-1.5">{l.lane_id}{l.valid ? "" : " *"}</td>
+              <td className="px-2 py-1.5 text-right font-bold">{l.speed}</td>
+              <td className="px-2 py-1.5 text-right">
+                <span className="mr-2 inline-block h-2 w-16 border border-ink align-middle">
+                  <span className="block h-full bg-ink" style={{ width: `${Math.min(100, l.occupancy)}%` }} />
+                </span>
+                {l.occupancy}%
+              </td>
+              <td className="px-4 py-1.5 text-right">{l.volume}</td>
             </tr>
           )) ?? (
-            <tr><td className="py-2 text-slate-500">No live reading for this period.</td></tr>
+            <tr><td className="px-4 py-3 text-muted">No reading this period.</td></tr>
           )}
         </tbody>
       </table>
-    </div>
+      <p className="px-4 py-2 font-readout text-[11px] text-muted">* stale lane · excluded from average</p>
+    </article>
   );
 }
