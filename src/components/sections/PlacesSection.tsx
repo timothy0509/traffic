@@ -16,18 +16,66 @@ import {
   type GeoJsonFC,
 } from "../../lib/feeds/csdi";
 import { fetchJson } from "../../lib/http";
+import { useLocale, type Locale } from "../../lib/locale";
 import PointsMap, { HK_CENTER, type MapPoint } from "../PointsMap";
 import { ChipRow, ErrorBox, LoadingLine, SectionShell } from "../ui";
 
 type Group = "td" | "hyd" | "marine" | "other";
 
 const GROUPS: Group[] = ["td", "hyd", "marine", "other"];
-const GROUP_LABEL: Record<Group, string> = {
-  td: "Transport Dept",
-  hyd: "Highways",
-  marine: "Marine",
-  other: "Others",
+
+const STR = {
+  en: {
+    kicker: "CSDI spatial library",
+    title: "Places",
+    sub: (n: number) => `${n} layers · Highways, Marine, Transport Dept and more`,
+    groups: { td: "Transport Dept", hyd: "Highways", marine: "Marine", other: "Others" } as Record<Group, string>,
+    groupCount: (label: string, n: number) => `${label} · ${n}`,
+    filterPh: (n: number) => `Filter ${n} layers by name or id…`,
+    noMatch: "No layers match this filter.",
+    sublayer: "Sublayer",
+    resolving: "Resolving CSDI service…",
+    layerErr: (e: string) => `Layer unreachable: ${e}`,
+    geomUnknown: "geometry type unknown",
+    geomPoint: (g: string) => `point geometry (${g})`,
+    geomNonPoint: (g: string) => `non-point geometry (${g}); geometry omitted for size`,
+    fallbackNote: "ArcGIS query failed; served from file API fallback.",
+    features: (n: string) => `${n} features`,
+    featuresLoaded: (n: string, plus: boolean) => `${n}${plus ? "+" : ""} features loaded`,
+    pinsNote: (pins: string, feats: string | null) =>
+      `${pins} pins${feats ? ` from ${feats} features` : ""} · hover a pin for its record name`,
+    geomOmitted: "Geometry omitted for size — counts + attribute table below. Polygons are too heavy to pin.",
+    tableNote: (rows: number, total: string, cols: number) =>
+      `First ${rows} of ${total} loaded rows · ${cols} key columns.`,
+  },
+  tc: {
+    kicker: "空間數據共享平台",
+    title: "地點",
+    sub: (n: number) => `共 ${n} 個圖層 · 路政署、海事處、運輸署等`,
+    groups: { td: "運輸署", hyd: "路政署", marine: "海事處", other: "其他" } as Record<Group, string>,
+    groupCount: (label: string, n: number) => `${label} · ${n}`,
+    filterPh: (n: number) => `按名稱或編號篩選 ${n} 個圖層…`,
+    noMatch: "沒有圖層符合篩選。",
+    sublayer: "子圖層",
+    resolving: "正在連接空間數據服務…",
+    layerErr: (e: string) => `無法取得圖層：${e}`,
+    geomUnknown: "幾何類型未知",
+    geomPoint: (g: string) => `點幾何 (${g})`,
+    geomNonPoint: (g: string) => `非點幾何 (${g})；為顧及大小已略去幾何`,
+    fallbackNote: "ArcGIS 查詢失敗；已改用檔案 API 備援。",
+    features: (n: string) => `${n} 個圖徵`,
+    featuresLoaded: (n: string, plus: boolean) => `已載入 ${n}${plus ? "+" : ""} 個圖徵`,
+    pinsNote: (pins: string, feats: string | null) =>
+      `${pins} 個圖釘${feats ? `（共 ${feats} 個圖徵）` : ""} · 懸停圖釘查看記錄名稱`,
+    geomOmitted: "為顧及大小已略去幾何 — 以下為統計及屬性表。多邊形太重，無法釘圖。",
+    tableNote: (rows: number, total: string, cols: number) =>
+      `已載入 ${total} 列中的首 ${rows} 列 · ${cols} 個主要欄位。`,
+  },
 };
+
+function stringsFor(lang: Locale) {
+  return STR[lang];
+}
 
 function groupOf(provider: string): Group {
   if (provider === "hk-td") return "td";
@@ -65,6 +113,9 @@ const DEFAULT_IDX = Math.max(
 );
 
 export default function PlacesSection() {
+  const { lang } = useLocale();
+  const S = stringsFor(lang);
+  const numLocale = lang === "tc" ? "zh-Hant-HK" : "en-HK";
   const [group, setGroup] = useState<Group>("td");
   const [filter, setFilter] = useState("");
   const [selIdx, setSelIdx] = useState(DEFAULT_IDX);
@@ -96,6 +147,10 @@ export default function PlacesSection() {
     return c;
   }, []);
 
+  // NOTE: CSDI attributes stay raw in both langs (no lang variant upstream),
+  // so the fetch stages below intentionally do not depend on lang — only the
+  // chrome strings above switch. lang is still passed to displayName for a
+  // uniform signature.
   // Stage 1: resolve service + list sublayers for the picked dataset.
   useEffect(() => {
     if (!selected) return;
@@ -119,10 +174,11 @@ export default function PlacesSection() {
         setSelLayerId((prev) => (list.some((x) => x.id === prev) ? prev : list[0].id));
       } catch (e) {
         if (seq.current !== my) return;
-        setError(`Layer unreachable: ${e instanceof Error ? e.message : String(e)}`);
+        setError(S.layerErr(e instanceof Error ? e.message : String(e)));
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
   // Stage 2: query the picked sublayer. Polygons use returnGeometry=false.
@@ -149,7 +205,7 @@ export default function PlacesSection() {
           const subName = layers.find((x) => x.id === selLayerId)?.name ?? "";
           data = await withDeadline(queryFileApi(selected.datasetId, subName), 60000, "file fallback");
           if (seq.current !== my) return;
-          setFallbackNote("ArcGIS query failed; served from file API fallback.");
+          setFallbackNote(S.fallbackNote);
           if (!meta.geometryType) {
             const first = data.features.find((f) => f.geometry?.type);
             setGeomType(first ? `geojson:${first.geometry?.type}` : "unknown");
@@ -175,13 +231,14 @@ export default function PlacesSection() {
         setLoading(false);
       } catch (e) {
         if (seq.current !== my) return;
-        setError(`Layer unreachable: ${e instanceof Error ? e.message : String(e)}`);
+        setError(S.layerErr(e instanceof Error ? e.message : String(e)));
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, serviceUrl, selLayerId, layers]);
 
-  const points: MapPoint[] = useMemo(() => (fc ? featureToPoints(fc).slice(0, 4000) : []), [fc]);
+  const points: MapPoint[] = useMemo(() => (fc ? featureToPoints(fc, lang).slice(0, 4000) : []), [fc, lang]);
   const pointLayer = geomType ? isPointGeometry(geomType) || points.length > 0 : points.length > 0;
   const columns = useMemo(() => (fc ? pickColumns(fc) : []), [fc]);
   const rows = useMemo(() => (fc ? fc.features.slice(0, 50) : []), [fc]);
@@ -193,22 +250,22 @@ export default function PlacesSection() {
   const showTable = fc !== null && (!pointLayer || (fc?.features.length ?? 0) > 200);
 
   const geomNote = !geomType
-    ? "geometry type unknown"
+    ? S.geomUnknown
     : pointLayer
-      ? `point geometry (${geomType})`
-      : `non-point geometry (${geomType}); geometry omitted for size`;
+      ? S.geomPoint(geomType)
+      : S.geomNonPoint(geomType);
   const countNote =
     total !== null
-      ? `${total.toLocaleString("en-HK")} features`
+      ? S.features(total.toLocaleString(numLocale))
       : fc
-        ? `${fc.features.length.toLocaleString("en-HK")}${fc.features.length >= 5000 ? "+" : ""} features loaded`
+        ? S.featuresLoaded(fc.features.length.toLocaleString(numLocale), fc.features.length >= 5000)
         : "";
 
   return (
     <SectionShell
-      kicker="CSDI spatial library"
-      title="Places"
-      sub={`${CSDI_LAYERS.length} layers · Highways, Marine, Transport Dept and more`}
+      kicker={S.kicker}
+      title={S.title}
+      sub={S.sub(CSDI_LAYERS.length)}
       right={<p className="font-readout text-xs text-ink-soft">{countNote}</p>}
     >
       <div className="border-b-2 border-ink px-4 py-3">
@@ -217,14 +274,14 @@ export default function PlacesSection() {
             options={GROUPS}
             value={group}
             onChange={setGroup}
-            labels={{ td: `Transport Dept · ${counts.td}`, hyd: `Highways · ${counts.hyd}`, marine: `Marine · ${counts.marine}`, other: `Others · ${counts.other}` }}
+            labels={{ td: S.groupCount(S.groups.td, counts.td), hyd: S.groupCount(S.groups.hyd, counts.hyd), marine: S.groupCount(S.groups.marine, counts.marine), other: S.groupCount(S.groups.other, counts.other) }}
           />
         </div>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter 86 layers by name or id…"
+            placeholder={S.filterPh(CSDI_LAYERS.length)}
             className="w-full border-2 border-ink bg-paper px-2 py-1.5 font-readout text-xs sm:max-w-xs"
           />
           <select
@@ -239,10 +296,10 @@ export default function PlacesSection() {
             ))}
           </select>
         </div>
-        {filtered.length === 0 && <p className="mt-2 font-readout text-xs text-signal">No layers match this filter.</p>}
+        {filtered.length === 0 && <p className="mt-2 font-readout text-xs text-signal">{S.noMatch}</p>}
         {layers.length > 1 && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="font-readout text-[11px] font-bold uppercase tracking-widest text-ink-soft">Sublayer</span>
+            <span className="font-readout text-[11px] font-bold uppercase tracking-widest text-ink-soft">{S.sublayer}</span>
             <select
               value={selLayerId === null ? "" : String(selLayerId)}
               onChange={(e) => setSelLayerId(Number(e.target.value))}
@@ -265,7 +322,7 @@ export default function PlacesSection() {
         </p>
       )}
 
-      {loading && !fc && <LoadingLine text="Resolving CSDI service…" />}
+      {loading && !fc && <LoadingLine text={S.resolving} />}
       {error && !fc && <ErrorBox message={error} />}
       {error && fc && <ErrorBox message={error} />}
 
@@ -273,14 +330,14 @@ export default function PlacesSection() {
         <div className="border-b-2 border-ink">
           <PointsMap points={points} center={mapCenter} zoom={points.length > 50 ? 11 : 13} />
           <p className="px-4 py-1 font-readout text-[11px] text-ink-soft">
-            {points.length.toLocaleString("en-HK")} pins{fc.features.length > points.length ? ` from ${fc.features.length.toLocaleString("en-HK")} features` : ""} · hover a pin for its record name
+            {S.pinsNote(points.length.toLocaleString(numLocale), fc.features.length > points.length ? fc.features.length.toLocaleString(numLocale) : null)}
           </p>
         </div>
       )}
 
       {fc && !pointLayer && (
         <p className="border-b-2 border-ink px-4 py-2 font-readout text-xs text-amber">
-          Geometry omitted for size — counts + attribute table below. Polygons are too heavy to pin.
+          {S.geomOmitted}
         </p>
       )}
 
@@ -309,14 +366,14 @@ export default function PlacesSection() {
             </tbody>
           </table>
           <p className="px-4 py-1 font-readout text-[11px] text-ink-soft">
-            First {rows.length} of {fc.features.length.toLocaleString("en-HK")} loaded rows · {columns.length} key columns.
+            {S.tableNote(rows.length, fc.features.length.toLocaleString(numLocale), columns.length)}
           </p>
         </div>
       )}
 
       {fc && !showTable && (
         <p className="px-4 py-3 font-readout text-xs text-ink-soft">
-          {fc.features.slice(0, 8).map((f) => displayName(f.properties ?? {})).join(" · ").slice(0, 220)}
+          {fc.features.slice(0, 8).map((f) => displayName(f.properties ?? {}, lang)).join(" · ").slice(0, 220)}
         </p>
       )}
     </SectionShell>

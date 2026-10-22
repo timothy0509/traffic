@@ -4,6 +4,7 @@
 // resultRecordCount/resultOffset + outSR=4326.
 
 import { fetchJson } from "../http";
+import type { Locale } from "../locale";
 import type { MapPoint } from "../../components/PointsMap";
 
 export interface CsdiLayerInfo {
@@ -215,8 +216,9 @@ const NAME_KEYS = [
 
 const INTERNAL_KEY = /^(shape|objectid|globalid|fid|shape__.*|st_.*shape)$/i;
 
-/** Best human label for a feature's property bag. */
-export function displayName(props: Record<string, unknown>): string {
+/** Best human label for a feature's property bag. CSDI attributes stay raw
+ * (no translation attempts); `_lang` is accepted for a uniform call signature only. */
+export function displayName(props: Record<string, unknown>, _lang: Locale = "en"): string {
   for (const k of NAME_KEYS) {
     const v = props[k];
     if (v !== null && v !== undefined && String(v).trim() !== "") return String(v).trim();
@@ -235,7 +237,7 @@ export function displayName(props: Record<string, unknown>): string {
 }
 
 /** Extract map pins from Point features only; polygons return []. */
-export function featureToPoints(fc: GeoJsonFC): MapPoint[] {
+export function featureToPoints(fc: GeoJsonFC, lang: Locale = "en"): MapPoint[] {
   const pts: MapPoint[] = [];
   fc.features.forEach((f, i) => {
     const g = f.geometry;
@@ -245,7 +247,7 @@ export function featureToPoints(fc: GeoJsonFC): MapPoint[] {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     const props = f.properties ?? {};
     const oid = props.OBJECTID ?? props.ObjectId ?? props.objectid ?? props.FID ?? i;
-    pts.push({ id: `f${String(oid)}-${i}`, lat, lng, tip: displayName(props).slice(0, 90) });
+    pts.push({ id: `f${String(oid)}-${i}`, lat, lng, tip: displayName(props, lang).slice(0, 90) });
   });
   return pts;
 }

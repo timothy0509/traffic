@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import type { EnrichedDetector } from "../lib/types";
+import { useLocale } from "../lib/locale";
 
 export default function TrafficMap({ detectors, selectedId, onSelect, center, zoom, dense }: { detectors: EnrichedDetector[]; selectedId: string | null; onSelect: (id: string) => void; center: [number, number]; zoom: number; dense?: boolean }) {
+  const { lang } = useLocale();
   const divRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -44,14 +46,14 @@ export default function TrafficMap({ detectors, selectedId, onSelect, center, zo
       });
       const m = L.marker([d.lat, d.lng], { icon, title: d.id });
       m.on("click", () => onSelect(d.id));
-      m.bindTooltip(`<b>${d.id}</b> ${d.avgSpeed === null ? "OFFLINE" : `${Math.round(d.avgSpeed)} KM/H · VOL ${d.totalVolume}`}<br/>${d.road_en}`, {
+      m.bindTooltip(`<b>${d.id}</b> ${d.avgSpeed === null ? (lang === "tc" ? "離線" : "OFFLINE") : `${Math.round(d.avgSpeed)} ${lang === "tc" ? "公里/時 · 車流" : "KM/H · VOL"} ${d.totalVolume}`}<br/>${lang === "tc" ? d.road_tc : d.road_en}`, {
         direction: "top",
         offset: [0, -22],
         className: "plate-tip",
       });
       layer.addLayer(m);
     }
-  }, [detectors, selectedId, onSelect, dense]);
+  }, [detectors, selectedId, onSelect, dense, lang]);
 
   useEffect(() => {
     const map = mapRef.current;

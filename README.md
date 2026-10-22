@@ -22,6 +22,10 @@ Deliberately omitted: yearly Traffic Flow Census (static, not live), Fortune/Wat
 - Leaflet + OpenStreetMap tiles, lucide-react icons
 - `src/lib/http.ts` — TTL cache + relay helper; `src/lib/feed.ts` — detector parsers; `src/lib/feeds/` — one client module per family
 
+## Language
+
+EN / 繁 toggle in the header, persisted in `localStorage` (defaults to Traditional Chinese when the browser language is Chinese). UI chrome is fully translated; data follows each feed's own localization: KMB/GMB/Citybus/NLB names and remarks, MTR bus (`zh`), Light Rail (`_ch`), HKKF/Sun Ferry, roadworks, census tables, HKIA (English-only upstream — noted in-app), port/customs CSVs, camera index, and speed panels all switch; a few sources have no Chinese variant (MTR line codes, blacksites) and stay as published.
+
 ## Run
 
 ```sh

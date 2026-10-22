@@ -3,6 +3,7 @@
 // Fortune Ferry / Water Taxi intentionally NOT wired (operator Cloudflare-blocks automated access).
 
 import { cached, fetchJson, fetchText } from "../http";
+import { lf, type Locale } from "../locale";
 
 // ---------------------------------------------------------------- MTR heavy rail
 
@@ -148,6 +149,9 @@ export interface LrtRouteEta {
   route_no: string;
   dest_en: string;
   time_en: string;
+  /** Display-ready strings resolved for the requested lang (dest_ch/time_ch in tc mode). */
+  dest: string;
+  time: string;
 }
 
 export interface LrtPlatform {
@@ -173,14 +177,25 @@ export const LRT_STATIONS: LrtStation[] = [
 ];
 
 interface LrtRaw {
-  platform_list?: LrtPlatform[];
+  platform_list?: (Omit<LrtPlatform, "route_list"> & {
+    route_list: (LrtRouteEta & Record<string, unknown>)[];
+  })[];
 }
 
-export async function fetchLrtSchedule(stationId: string): Promise<LrtPlatform[]> {
+export async function fetchLrtSchedule(stationId: string, lang: Locale = "en"): Promise<LrtPlatform[]> {
   const id = stationId.trim();
-  return cached(`lrt-${id}`, 10_000, async () => {
+  return cached(`lrt-${id}-${lang}`, 10_000, async () => {
     const raw = await fetchJson<LrtRaw>(`https://rt.data.gov.hk/v1/transport/mtr/lrt/getSchedule?station_id=${encodeURIComponent(id)}`);
-    return raw.platform_list ?? [];
+    return (raw.platform_list ?? []).map((p) => ({
+      platform_id: p.platform_id,
+      route_list: (p.route_list ?? []).map((r) => ({
+        route_no: r.route_no,
+        dest_en: r.dest_en,
+        time_en: r.time_en,
+        dest: lf(r, "dest", lang) || "—",
+        time: lf(r, "time", lang) || "—",
+      })),
+    }));
   });
 }
 
@@ -204,14 +219,14 @@ interface MtrBusRaw {
   busStop?: MtrBusStop[];
 }
 
-export async function fetchMtrBusSchedule(routeName: string): Promise<MtrBusStop[]> {
+export async function fetchMtrBusSchedule(routeName: string, lang: Locale = "en"): Promise<MtrBusStop[]> {
   const route = routeName.trim().toUpperCase();
-  if (!route) throw new Error("enter a route name");
-  return cached(`mtrbus-${route}`, 10_000, async () => {
+  if (!route) throw new Error(lang === "tc" ? "請輸入路線名稱" : "enter a route name");
+  return cached(`mtrbus-${route}-${lang}`, 10_000, async () => {
     const raw = await fetchJson<MtrBusRaw>("https://rt.data.gov.hk/v1/transport/mtr/bus/getSchedule", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ language: "en", routeName: route }),
+      body: JSON.stringify({ language: lang === "tc" ? "zh" : "en", routeName: route }),
     });
     return raw.busStop ?? [];
   });
@@ -225,6 +240,9 @@ export interface HkkfRoute {
   route_id?: string;
   route_no?: string;
   name_en?: string;
+  name_tc?: string;
+  route_name_en?: string;
+  route_name_tc?: string;
   origin?: string;
   destination?: string;
   [k: string]: unknown;
@@ -233,6 +251,7 @@ export interface HkkfRoute {
 export interface HkkfPier {
   pier_id?: string;
   name_en?: string;
+  name_tc?: string;
   lat?: string;
   long?: string;
 }
@@ -253,6 +272,17 @@ export const HKKF_ROUTES = [
 
 export type HkkfDirection = "inbound" | "outbound";
 
+/** Display-ready route name: route_name_tc/name_tc in tc mode, English otherwise. */
+export function hkkfRouteName(r: HkkfRoute | undefined, lang: Locale): string {
+  if (!r) return "";
+  const named = lf(r, "route_name", lang) || lf(r, "name", lang);
+  if (named) return named;
+  const o = lf(r, "origin", lang);
+  const d = lf(r, "destination", lang);
+  if (o || d) return `${o} – ${d}`;
+  return "";
+}
+
 export async function fetchHkkfRoutes(): Promise<HkkfRoute[]> {
   return cached("hkkf-routes", 300_000, async () => {
     const raw = await fetchJson<HkkfRoute[] | { data?: HkkfRoute[] }>(`${HKKF}/opendata/route/`);
@@ -260,27 +290,30 @@ export async function fetchHkkfRoutes(): Promise<HkkfRoute[]> {
   });
 }
 
+// HKKF path rules (verified): route list needs trailing slash; pier, eta,
+// timetable and fare endpoints 404 with one — path segments only, no query.
 export async function fetchHkkfPier(pierId: string): Promise<HkkfPier> {
-  return cached(`hkkf-pier-${pierId}`, 300_000, () =>
-    fetchJson<HkkfPier>(`${HKKF}/opendata/pier/${encodeURIComponent(pierId)}/`),
-  );
+  return cached(`hkkf-pier-${pierId}`, 300_000, async () => {
+    const raw = await fetchJson<HkkfPier | { data?: HkkfPier }>(`${HKKF}/opendata/pier/${encodeURIComponent(pierId)}`);
+    return (raw as { data?: HkkfPier }).data ?? (raw as HkkfPier);
+  });
 }
 
 export async function fetchHkkfEta(routeId: string, direction: HkkfDirection): Promise<HkkfEta> {
   return cached(`hkkf-eta-${routeId}-${direction}`, 20_000, () =>
-    fetchJson<HkkfEta>(`${HKKF}/opendata/eta/${encodeURIComponent(routeId)}/${direction}/`),
+    fetchJson<HkkfEta>(`${HKKF}/opendata/eta/${encodeURIComponent(routeId)}/${direction}`),
   );
 }
 
 export async function fetchHkkfTimetable(routeId: string, direction: HkkfDirection): Promise<string> {
   return cached(`hkkf-tt-${routeId}-${direction}`, 300_000, () =>
-    fetchText(`${HKKF}/opendata/time_table/${encodeURIComponent(routeId)}/${direction}/`),
+    fetchText(`${HKKF}/opendata/time_table/${encodeURIComponent(routeId)}/${direction}`),
   );
 }
 
 export async function fetchHkkfFare(routeId: string): Promise<string> {
   return cached(`hkkf-fare-${routeId}`, 300_000, () =>
-    fetchText(`${HKKF}/opendata/fare_table/${encodeURIComponent(routeId)}/`),
+    fetchText(`${HKKF}/opendata/fare_table/${encodeURIComponent(routeId)}`),
   );
 }
 
@@ -289,11 +322,17 @@ export async function fetchHkkfFare(routeId: string): Promise<string> {
 export interface SunFerrySailing {
   routecode?: string;
   route_en?: string;
+  route_tc?: string;
   vesselcode?: string;
   depart_time?: string;
   eta?: string;
+  rmk_en?: string | null;
+  rmk_tc?: string | null;
   lat?: string | number;
   lng?: string | number;
+  /** Display-ready strings resolved for the requested lang (route_tc/rmk_tc in tc mode). */
+  routeName: string;
+  remark: string;
 }
 
 export const SUNFERRY_ROUTES = [
@@ -307,14 +346,20 @@ export const SUNFERRY_ROUTES = [
   { code: "KCNP", label: "Kowloon City → North Point" },
 ];
 
-export async function fetchSunFerry(route: string): Promise<SunFerrySailing[]> {
+export async function fetchSunFerry(route: string, lang: Locale = "en"): Promise<SunFerrySailing[]> {
   const code = route.trim().toUpperCase();
-  if (!code) throw new Error("pick a route");
-  return cached(`sunferry-${code}`, 20_000, async () => {
-    const raw = await fetchJson<{ data?: SunFerrySailing[] } | SunFerrySailing[]>(
+  if (!code) throw new Error(lang === "tc" ? "請選擇航線" : "pick a route");
+  type Raw = SunFerrySailing & Record<string, unknown>;
+  return cached(`sunferry-${code}-${lang}`, 20_000, async () => {
+    const raw = await fetchJson<{ data?: Raw[] } | Raw[]>(
       `https://www.sunferry.com.hk/eta/?route=${encodeURIComponent(code)}`,
     );
-    return Array.isArray(raw) ? raw : (raw.data ?? []);
+    const list = Array.isArray(raw) ? raw : (raw.data ?? []);
+    return list.map((s) => ({
+      ...s,
+      routeName: lf(s, "route", lang) || s.routecode || code,
+      remark: lf(s, "rmk", lang),
+    }));
   });
 }
 
@@ -345,10 +390,10 @@ export function minutesUntil(timeStr: string, now: Date = new Date()): number | 
   return diff;
 }
 
-/** Compact "3 min" / "due" / "12:34" label for a countdown value. */
-export function countdownLabel(mins: number | null, fallback: string): string {
+/** Compact countdown label, localized. tc: "即到" / "N 分鐘". */
+export function countdownLabel(mins: number | null, fallback: string, lang: Locale = "en"): string {
   if (mins === null) return fallback;
-  if (mins <= 0) return "due";
-  if (mins < 60) return `${mins} min`;
+  if (mins <= 0) return lang === "tc" ? "即到" : "due";
+  if (mins < 60) return lang === "tc" ? `${mins} 分鐘` : `${mins} min`;
   return fallback;
 }

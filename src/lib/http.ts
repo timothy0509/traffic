@@ -32,3 +32,10 @@ export async function fetchViaRelay<T>(url: string, asJson = true): Promise<T> {
   if (!r.ok) throw new Error(`relay ${r.status}`);
   return (asJson ? await r.json() : await r.text()) as T;
 }
+
+// Raw bytes through the relay (for non-UTF-8 payloads like Big5 CSVs).
+export async function fetchViaRelayBytes(url: string): Promise<ArrayBuffer> {
+  const r = await fetch(`/api/relay?url=${encodeURIComponent(url)}`);
+  if (!r.ok) throw new Error(`relay ${r.status}`);
+  return r.arrayBuffer();
+}

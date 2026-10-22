@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
 import type { EnrichedDetector } from "../lib/types";
+import { useLocale } from "../lib/locale";
 
 type SortKey = "avgSpeed" | "totalVolume" | "maxOccupancy" | "id";
+
+const STR = {
+  en: { find: "Find", findPh: "id or road…", district: "District", all: "All", listed: (a: number, b: number) => `${a} / ${b} listed`, id: "Detector", loc: "Location", speed: "km/h", vol: "Veh", occ: "Occ", flow: "Flow", na: "--" },
+  tc: { find: "尋找", findPh: "編號或道路…", district: "地區", all: "全部", listed: (a: number, b: number) => `顯示 ${a} / ${b} 項`, id: "檢測器", loc: "位置", speed: "公里/時", vol: "車流", occ: "佔用", flow: "狀況", na: "--" },
+};
 
 const DOT: Record<EnrichedDetector["status"], string> = {
   smooth: "bg-go",
@@ -11,6 +17,8 @@ const DOT: Record<EnrichedDetector["status"], string> = {
 };
 
 export default function DetectorTable({ detectors, selectedId, onSelect }: { detectors: EnrichedDetector[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  const { lang } = useLocale();
+  const t = STR[lang];
   const [q, setQ] = useState("");
   const [district, setDistrict] = useState("All");
   const [sortKey, setSortKey] = useState<SortKey>("avgSpeed");
@@ -20,7 +28,7 @@ export default function DetectorTable({ detectors, selectedId, onSelect }: { det
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const out = detectors.filter((d) => (district === "All" || d.district === district) && (!needle || d.id.toLowerCase().includes(needle) || d.road_en.toLowerCase().includes(needle)));
+    const out = detectors.filter((d) => (district === "All" || d.district === district) && (!needle || d.id.toLowerCase().includes(needle) || d.road_en.toLowerCase().includes(needle) || d.road_tc.includes(q.trim())));
     return [...out].sort((a, b) => {
       const va = sortKey === "id" ? a.id : (a[sortKey] ?? -1);
       const vb = sortKey === "id" ? b.id : (b[sortKey] ?? -1);
@@ -38,35 +46,35 @@ export default function DetectorTable({ detectors, selectedId, onSelect }: { det
     <section className="border-2 border-ink bg-paper">
       <div className="flex flex-col gap-2 border-b-2 border-ink p-3 sm:flex-row sm:items-center">
         <label className="flex flex-1 items-center gap-2 sm:max-w-xs">
-          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Find</span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="id or road…" className="w-full border-2 border-ink bg-paper px-2 py-1 font-readout text-sm outline-none placeholder:text-muted focus:bg-white" />
+          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.find}</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.findPh} className="w-full border-2 border-ink bg-paper px-2 py-1 font-readout text-sm outline-none placeholder:text-muted focus:bg-white" />
         </label>
         <label className="flex items-center gap-2">
-          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">District</span>
+          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.district}</span>
           <select value={district} onChange={(e) => setDistrict(e.target.value)} className="border-2 border-ink bg-paper px-2 py-1 font-readout text-sm">
-            {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+            {districts.map((d) => <option key={d} value={d}>{d === "All" ? t.all : d}</option>)}
           </select>
         </label>
-        <div className="font-readout text-xs text-muted sm:ml-auto">{rows.length} / {detectors.length} listed</div>
+        <div className="font-readout text-xs text-muted sm:ml-auto">{t.listed(rows.length, detectors.length)}</div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px]">
           <thead>
             <tr className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">
-              <th className="px-3 py-2 text-left"><button onClick={() => toggle("id")}>Detector {sortKey === "id" ? (asc ? "▲" : "▼") : ""}</button></th>
-              <th className="px-3 py-2 text-left">Location</th>
-              <th className="px-3 py-2 text-right"><button onClick={() => toggle("avgSpeed")}>km/h {sortKey === "avgSpeed" ? (asc ? "▲" : "▼") : ""}</button></th>
-              <th className="px-3 py-2 text-right"><button onClick={() => toggle("totalVolume")}>Veh {sortKey === "totalVolume" ? (asc ? "▲" : "▼") : ""}</button></th>
-              <th className="px-3 py-2 text-right"><button onClick={() => toggle("maxOccupancy")}>Occ {sortKey === "maxOccupancy" ? (asc ? "▲" : "▼") : ""}</button></th>
-              <th className="px-3 py-2 text-left">Flow</th>
+              <th className="px-3 py-2 text-left"><button onClick={() => toggle("id")}>{t.id} {sortKey === "id" ? (asc ? "▲" : "▼") : ""}</button></th>
+              <th className="px-3 py-2 text-left">{t.loc}</th>
+              <th className="px-3 py-2 text-right"><button onClick={() => toggle("avgSpeed")}>{t.speed} {sortKey === "avgSpeed" ? (asc ? "▲" : "▼") : ""}</button></th>
+              <th className="px-3 py-2 text-right"><button onClick={() => toggle("totalVolume")}>{t.vol} {sortKey === "totalVolume" ? (asc ? "▲" : "▼") : ""}</button></th>
+              <th className="px-3 py-2 text-right"><button onClick={() => toggle("maxOccupancy")}>{t.occ} {sortKey === "maxOccupancy" ? (asc ? "▲" : "▼") : ""}</button></th>
+              <th className="px-3 py-2 text-left">{t.flow}</th>
             </tr>
           </thead>
           <tbody className="font-readout text-sm tabular-nums">
             {rows.map((d) => (
               <tr key={d.id} onClick={() => onSelect(d.id)} className={`cursor-pointer border-t border-line hover:bg-paper-dim ${d.id === selectedId ? "bg-ink text-paper hover:bg-ink" : ""}`}>
                 <td className="px-3 py-1.5 text-xs font-bold">{d.id}</td>
-                <td className="max-w-[340px] truncate px-3 py-1.5 font-display text-[15px] font-medium">{d.road_en.replace(/\s*\[AID\d+\]\s*$/, "")}</td>
-                <td className="px-3 py-1.5 text-right font-bold">{d.avgSpeed === null ? "--" : Math.round(d.avgSpeed)}</td>
+                <td className="max-w-[340px] truncate px-3 py-1.5 font-display text-[15px] font-medium">{lang === "tc" ? d.road_tc : d.road_en.replace(/\s*\[AID\d+\]\s*$/, "")}</td>
+                <td className="px-3 py-1.5 text-right font-bold">{d.avgSpeed === null ? t.na : Math.round(d.avgSpeed)}</td>
                 <td className="px-3 py-1.5 text-right">{d.totalVolume}</td>
                 <td className="px-3 py-1.5 text-right">{d.maxOccupancy}%</td>
                 <td className="px-3 py-1.5"><span className={`inline-block h-3 w-3 border ${d.id === selectedId ? "border-paper" : "border-ink"} ${DOT[d.status]}`} /></td>

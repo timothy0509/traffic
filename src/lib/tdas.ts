@@ -11,6 +11,7 @@ export interface TdasPlanArgs {
   departIn?: number; // minutes, one of 0/15/30/45/60/75/90
   type?: "ST" | "SD";
   tunnel?: "cht" | "eht" | "wht";
+  lang?: "en" | "tc";
 }
 
 export interface TdasAlternate {
@@ -27,19 +28,20 @@ export interface TdasResult {
   alternates: TdasAlternate[];
 }
 
-const TUNNEL_NAMES: Record<string, string> = {
-  cht: "Cross-Harbour Tunnel",
-  wht: "Western Harbour Crossing",
-  eht: "Eastern Harbour Crossing",
+const TUNNEL_NAMES: Record<string, { en: string; tc: string }> = {
+  cht: { en: "Cross-Harbour Tunnel", tc: "紅磡海底隧道" },
+  wht: { en: "Western Harbour Crossing", tc: "西區海底隧道" },
+  eht: { en: "Eastern Harbour Crossing", tc: "東區海底隧道" },
 };
 
 export const TUNNEL_LABEL = TUNNEL_NAMES;
 
 export async function planRoute(args: TdasPlanArgs): Promise<TdasResult> {
+  const lang = args.lang === "tc" ? "tc" : "en";
   const body: Record<string, unknown> = {
     start: { lat: args.from.lat, long: args.from.lng },
     end: { lat: args.to.lat, long: args.to.lng },
-    lang: "en",
+    lang,
     type: args.type ?? "ST",
   };
   if (args.departIn) body.departIn = args.departIn;
@@ -51,7 +53,7 @@ export async function planRoute(args: TdasPlanArgs): Promise<TdasResult> {
   });
   const j = (await r.json()) as Record<string, unknown>;
   if (!r.ok) throw new Error((j.Message as string) || `route ${r.status}`);
-  const tunnels = ["cht", "wht", "eht"].filter((t) => j[t] === true).map((t) => TUNNEL_NAMES[t]);
+  const tunnels = ["cht", "wht", "eht"].filter((t) => j[t] === true).map((t) => TUNNEL_NAMES[t][lang]);
   return {
     speed: String(j.jSpeed ?? "--"),
     distU: String(j.distU ?? "--"),
@@ -60,24 +62,25 @@ export async function planRoute(args: TdasPlanArgs): Promise<TdasResult> {
     alternates: (Array.isArray(j.ar) ? j.ar : []).map((a) => {
       const alt = a as Record<string, unknown>;
       const name = String(alt.name ?? "");
-      return { name: TUNNEL_NAMES[name] ?? name, distU: String(alt.distU ?? ""), eta: String(alt.eta ?? "") };
+      return { name: TUNNEL_NAMES[name]?.[lang] ?? name, distU: String(alt.distU ?? ""), eta: String(alt.eta ?? "") };
     }),
   };
 }
 
 export interface PresetPlace {
   name: string;
+  name_tc: string;
   lat: number;
   lng: number;
 }
 
 export const PRESET_PLACES: PresetPlace[] = [
-  { name: "Central (IFC)", lat: 22.2849, lng: 114.1577 },
-  { name: "Causeway Bay", lat: 22.2806, lng: 114.1855 },
-  { name: "Tsim Sha Tsui", lat: 22.2988, lng: 114.1722 },
-  { name: "Mong Kok", lat: 22.3193, lng: 114.1694 },
-  { name: "Kwun Tong", lat: 22.3126, lng: 114.226 },
-  { name: "Sha Tin", lat: 22.3822, lng: 114.1887 },
-  { name: "Tsuen Wan", lat: 22.37, lng: 114.1141 },
-  { name: "Airport", lat: 22.308, lng: 113.9185 },
+  { name: "Central (IFC)", name_tc: "中環（國際金融中心）", lat: 22.2849, lng: 114.1577 },
+  { name: "Causeway Bay", name_tc: "銅鑼灣", lat: 22.2806, lng: 114.1855 },
+  { name: "Tsim Sha Tsui", name_tc: "尖沙咀", lat: 22.2988, lng: 114.1722 },
+  { name: "Mong Kok", name_tc: "旺角", lat: 22.3193, lng: 114.1694 },
+  { name: "Kwun Tong", name_tc: "觀塘", lat: 22.3126, lng: 114.226 },
+  { name: "Sha Tin", name_tc: "沙田", lat: 22.3822, lng: 114.1887 },
+  { name: "Tsuen Wan", name_tc: "荃灣", lat: 22.37, lng: 114.1141 },
+  { name: "Airport", name_tc: "機場", lat: 22.308, lng: 113.9185 },
 ];

@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { fetchLive, fetchMetas, getStoredLive, type SourceConfig } from "./lib/feed";
 import { SLP_SOURCE, STRATEGIC_SOURCE } from "./lib/sources";
 import { classify, type DetectorMeta, type EnrichedDetector, type LiveResponse } from "./lib/types";
+import { useLocale } from "./lib/locale";
 import TrafficMap from "./components/TrafficMap";
 import StatsBar from "./components/StatsBar";
 import DetectorPanel from "./components/DetectorPanel";
@@ -57,6 +58,7 @@ function enrich(metas: DetectorMeta[], live: LiveResponse | null): EnrichedDetec
 }
 
 export default function App() {
+  const { lang, setLang } = useLocale();
   const [section, setSection] = useState<Section>("boards");
   const [view, setView] = useState<View>("slp");
   const [store, setStore] = useState<Record<string, SourceState>>(() => ({
@@ -136,51 +138,61 @@ export default function App() {
   const latestPeriod = state?.live?.periods[state.live.periods.length - 1];
   const periodLabel = latestPeriod ? `${state?.live?.date} ${latestPeriod.from}–${latestPeriod.to}` : "";
 
-  const boardTabs: [View, string][] = [
-    ["slp", `Lampposts · ${store.slp.metas.length || 20}`],
-    ["strategic", `Strategic · ${store.strategic.metas.length || "800+"}`],
+  const boardTabs: [View, string, string][] = [
+    ["slp", `Lampposts · ${store.slp.metas.length || 20}`, `智慧燈柱 · ${store.slp.metas.length || 20}`],
+    ["strategic", `Strategic · ${store.strategic.metas.length || "800+"}`, `策略性道路 · ${store.strategic.metas.length || "800+"}`],
   ];
 
-  const sections: [Section, string][] = [
-    ["boards", "Boards"],
-    ["journey", "Journey"],
-    ["buses", "Buses"],
-    ["railsea", "Rail·Sea"],
-    ["parking", "Parking"],
-    ["taxi", "Taxis"],
-    ["roads", "CCTV·Works"],
-    ["places", "Places"],
-    ["stats", "Stats"],
+  const sections: [Section, string, string][] = [
+    ["boards", "Boards", "看板"],
+    ["journey", "Journey", "行程"],
+    ["buses", "Buses", "巴士"],
+    ["railsea", "Rail·Sea", "鐵路·渡輪"],
+    ["parking", "Parking", "泊車"],
+    ["taxi", "Taxis", "的士"],
+    ["roads", "CCTV·Works", "閉路電視·工程"],
+    ["places", "Places", "地方設施"],
+    ["stats", "Stats", "統計"],
   ];
+  const L = (en: string, tc: string) => (lang === "tc" ? tc : en);
 
   return (
     <div className="mx-auto min-h-screen max-w-7xl px-3 py-5 sm:px-5">
       <header>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="font-readout text-[11px] font-bold uppercase tracking-[0.28em] text-signal">Transport Department · live traffic</p>
-            <h1 className="font-display text-5xl font-bold uppercase leading-[0.95] tracking-tight sm:text-6xl">Traffic Bulletin</h1>
-            <p className="mt-1 font-display text-xl font-medium text-ink-soft">智慧燈柱交通快訊 · every API-available transport feed, live</p>
+            <p className="font-readout text-[11px] font-bold uppercase tracking-[0.28em] text-signal">{L("Transport Department · live traffic", "運輸署 · 即時交通")}</p>
+            <h1 className="font-display text-5xl font-bold uppercase leading-[0.95] tracking-tight sm:text-6xl">{L("Traffic Bulletin", "交通快訊")}</h1>
+            <p className="mt-1 font-display text-xl font-medium text-ink-soft">{L("Every API-available transport feed, live", "所有設有 API 的運輸數據，實時更新")}</p>
           </div>
-          {section === "boards" && cfg && (
-            <button onClick={() => load(cfg, false)} className="border-2 border-ink bg-paper px-3 py-1.5 font-readout text-xs font-bold uppercase tracking-widest shadow-[3px_3px_0_var(--color-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-              <RefreshCw size={13} className="mr-1 inline" /> Re-poll
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <div className="flex border-2 border-ink" role="group" aria-label="Language">
+              {(["en", "tc"] as const).map((l) => (
+                <button key={l} onClick={() => setLang(l)} className={`px-3 py-1.5 font-readout text-xs font-bold ${lang === l ? "bg-ink text-paper" : "bg-paper"}`}>
+                  {l === "en" ? "EN" : "繁"}
+                </button>
+              ))}
+            </div>
+            {section === "boards" && cfg && (
+              <button onClick={() => load(cfg, false)} className="border-2 border-ink bg-paper px-3 py-1.5 font-readout text-xs font-bold uppercase tracking-widest shadow-[3px_3px_0_var(--color-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+                <RefreshCw size={13} className="mr-1 inline" /> {L("Re-poll", "重新整理")}
+              </button>
+            )}
+          </div>
         </div>
         <div className="hazard mt-3 h-2.5 w-full border-y-2 border-ink" />
         <nav className="mt-3 flex flex-wrap gap-2">
-          {sections.map(([s, label]) => (
+          {sections.map(([s, en, tc]) => (
             <button key={s} onClick={() => setSection(s)} className={`border-2 border-ink px-4 py-1.5 font-display text-lg font-bold uppercase tracking-wide ${section === s ? "bg-ink text-paper" : "bg-paper hover:bg-paper-dim"}`}>
-              {label}
+              {lang === "tc" ? tc : en}
             </button>
           ))}
         </nav>
         {section === "boards" && (
           <nav className="mt-2 flex flex-wrap gap-2">
-            {boardTabs.map(([v, label]) => (
+            {boardTabs.map(([v, en, tc]) => (
               <button key={v} onClick={() => setView(v)} className={`border border-ink px-3 py-1 font-display text-base font-semibold uppercase tracking-wide ${view === v ? "bg-signal text-paper" : "bg-paper"}`}>
-                {label}
+                {lang === "tc" ? tc : en}
               </button>
             ))}
           </nav>
@@ -204,29 +216,33 @@ export default function App() {
       ) : section === "stats" ? (
         <Suspense fallback={<SectionFallback />}><div className="mt-4"><StatsSection /></div></Suspense>
       ) : loading ? (
-        <div className="mt-8 font-readout text-sm text-ink-soft">Tuning in to feed…</div>
+        <div className="mt-8 font-readout text-sm text-ink-soft">{L("Tuning in to feed…", "正在接收數據…")}</div>
       ) : (
         <>
           <div className="vms mt-4 border-2 border-ink px-4 py-3">
             <p className="vms-text font-readout text-sm font-bold uppercase tracking-[0.14em] sm:text-base">
               {congested > 0
-                ? `Caution: ${congested} congested detector${congested > 1 ? "s" : ""} · network avg ${avgSpeed === null ? "--" : Math.round(avgSpeed)} km/h`
-                : `Network moving · avg ${avgSpeed === null ? "--" : Math.round(avgSpeed)} km/h · ${totalVol} veh per 30 s`}
+                ? lang === "tc"
+                  ? `注意：${congested} 個檢測器擠塞 · 全網平均 ${avgSpeed === null ? "--" : Math.round(avgSpeed)} 公里/時`
+                  : `Caution: ${congested} congested detector${congested > 1 ? "s" : ""} · network avg ${avgSpeed === null ? "--" : Math.round(avgSpeed)} km/h`
+                : lang === "tc"
+                  ? `路面暢通 · 平均 ${avgSpeed === null ? "--" : Math.round(avgSpeed)} 公里/時 · 每 30 秒 ${totalVol} 架次`
+                  : `Network moving · avg ${avgSpeed === null ? "--" : Math.round(avgSpeed)} km/h · ${totalVol} veh per 30 s`}
               <span className="vms-cursor"> ▮</span>
             </p>
-            <p className="vms-text mt-1 font-readout text-[11px] uppercase tracking-[0.2em] opacity-80">{periodLabel}{state?.lastUpdated ? ` · polled ${state.lastUpdated.toLocaleTimeString("en-HK", { hour12: false })} HKT` : ""}</p>
+            <p className="vms-text mt-1 font-readout text-[11px] uppercase tracking-[0.2em] opacity-80">{periodLabel}{state?.lastUpdated ? ` · polled ${state.lastUpdated.toLocaleTimeString(lang === "tc" ? "zh-HK" : "en-HK", { hour12: false })} HKT` : ""}</p>
           </div>
 
           <div className="mt-4"><StatsBar online={online} total={enriched.length} avgSpeed={avgSpeed} totalVol={totalVol} congested={congested} /></div>
-          {error && <div className="mt-3 border-2 border-signal bg-paper px-3 py-2 font-readout text-xs text-signal">{error} Showing last good readings.</div>}
+          {error && <div className="mt-3 border-2 border-signal bg-paper px-3 py-2 font-readout text-xs text-signal">{error} {L("Showing last good readings.", "顯示上次正常讀數。")}</div>}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <TrafficMap detectors={enriched} selectedId={selected?.id ?? null} onSelect={setSelectedId} center={MAP_VIEW[view].center} zoom={MAP_VIEW[view].zoom} dense={enriched.length > 100} />
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-readout text-[11px] uppercase tracking-widest text-ink-soft">
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 border border-ink bg-go" /> smooth ≥30</span>
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 border border-ink bg-vms" /> slow 15–30</span>
-                <span><span className="mr-1 inline-block h-2.5 w-2.5 border border-ink bg-signal" /> congested &lt;15</span>
+                <span><span className="mr-1 inline-block h-2.5 w-2.5 border border-ink bg-go" /> {L("smooth ≥30", "暢順 ≥30")}</span>
+                <span><span className="mr-1 inline-block h-2.5 w-2.5 border border-ink bg-vms" /> {L("slow 15–30", "緩慢 15–30")}</span>
+                <span><span className="mr-1 inline-block h-2.5 w-2.5 border border-ink bg-signal" /> {L("congested <15", "擠塞 <15")}</span>
                 <span className="ml-auto tabular-nums">{periodLabel}</span>
               </div>
             </div>
@@ -239,9 +255,11 @@ export default function App() {
       )}
 
       <footer className="mt-6 border-t-2 border-ink pt-3 font-readout text-[11px] leading-relaxed text-ink-soft">
-        Sources: DATA.GOV.HK transport category, every API-available dataset — detectors, TDAS, buses, MTR, ferries, parking, taxis, CCTV, roadworks, CSDI places, census stats.
-        Browser fetches open feeds directly; a same-origin relay serves hosts without CORS headers.{" "}
-        <a className="underline" href="https://data.gov.hk/en-datasets/category/transport">Transport datasets</a>
+        {L(
+          "Sources: DATA.GOV.HK transport category, every API-available dataset — detectors, TDAS, buses, MTR, ferries, parking, taxis, CCTV, roadworks, CSDI places, census stats. Browser fetches open feeds directly; a same-origin relay serves hosts without CORS headers.",
+          "資料來源：DATA.GOV.HK 運輸類別所有設有 API 的數據集 — 檢測器、TDAS、巴士、港鐵、渡輪、泊車、的士、閉路電視、道路工程、CSDI 地方設施、統計數字。瀏覽器直接讀取開放數據；同源中繼處理沒有 CORS 標頭的來源。"
+        )}{" "}
+        <a className="underline" href="https://data.gov.hk/en-datasets/category/transport">{L("Transport datasets", "運輸數據集")}</a>
       </footer>
     </div>
   );

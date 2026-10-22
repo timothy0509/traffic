@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChipRow, ErrorBox, LoadingLine, SectionShell } from "../ui";
+import { useLocale } from "../../lib/locale";
 import {
+  dispDest,
+  dispName,
+  dispOrig,
+  dispRemark,
+  dispRouteName,
+  dispStopName,
   formatEta,
   getBatchStopEtas,
   getBatchStopRoutes,
@@ -21,6 +28,7 @@ import {
   listNlbRoutes,
   listNlbStops,
   type CtbEta,
+  type CtbStop,
   type GmbRegion,
   type KmbEta,
   type KmbStop,
@@ -29,12 +37,92 @@ import {
 type Op = "kmb" | "ctb" | "gmb" | "nlb" | "board";
 
 const OPS: Op[] = ["kmb", "ctb", "gmb", "nlb", "board"];
-const OP_LABEL: Record<Op, string> = {
-  kmb: "KMB",
-  ctb: "Citybus",
-  gmb: "GMB",
-  nlb: "NLB",
-  board: "Stop board",
+
+const STR = {
+  en: {
+    ops: { kmb: "KMB", ctb: "Citybus", gmb: "GMB", nlb: "NLB", board: "Stop board" } as Record<Op, string>,
+    kicker: "Franchised buses · live ETA",
+    title: "Bus bulletin",
+    sub: "KMB · Citybus · GMB · NLB departures, polled live from the operators.",
+    footnote:
+      "Sources: data.etabus.gov.hk (KMB/LWB) · data.etagmb.gov.hk (GMB) · rt.data.gov.hk Citybus + NLB v2 + batch board. Static lists cached 24h in memory; ETAs refresh every 30s.",
+    loadingKmb: "Loading KMB route list…",
+    loadingCtb: "Loading Citybus routes…",
+    loadingGmb: "Loading GMB routes…",
+    loadingNlb: "Loading NLB routes…",
+    filterRoutes: (n: number) => `Filter routes · ${n} variants`,
+    phKmb: "e.g. 1A, 968, N216",
+    phCtb: "e.g. 5B, 973, N8X",
+    phNlb: "e.g. 38, B2, N35",
+    route: "Route",
+    outbound: "outbound",
+    inbound: "inbound",
+    svc: (s: string) => `svc ${s}`,
+    pickDirection: "Pick a direction.",
+    stops: (n: number) => `Stops · ${n}`,
+    noStops: "No stops found.",
+    departuresStop: (s: string) => `Departures · stop ${s}`,
+    departuresRouteStop: (r: string, s: string) => `Departures · ${r} @ ${s}`,
+    departuresGmb: (code: string, seq: string, stop: string) => `Departures · ${code} seq ${seq} stop ${stop}`,
+    autoRefresh: "auto-refresh 30s",
+    noGPSNote: "noGPS=1 rows are scheduled · auto-refresh 30s",
+    noDepartures: "No scheduled departures.",
+    stopFallback: (seq: number) => `seq ${seq}`,
+    region: "Region",
+    filterCode: "Filter route code, e.g. 4A",
+    seqBtn: (n: number) => `seq ${n}`,
+    scheduled: "scheduled",
+    company: "Company",
+    stopIdLabel: "Stop id",
+    boardPlaceholder: "e.g. CTB 002892 · NLB stop id · KMB EF7743",
+    board: "Board",
+    routesServing: (n: number) => `Routes serving · ${n}`,
+    noRoutes: "No routes on file for this stop/company.",
+    etasTitle: (n: number) => `ETAs · ${n}`,
+    noBoardEtas: "No departures within 60 min (NLB eta may be blank past the window).",
+  },
+  tc: {
+    ops: { kmb: "KMB", ctb: "城巴", gmb: "專線小巴", nlb: "嶼巴", board: "站牌" } as Record<Op, string>,
+    kicker: "專營巴士 · 實時到站",
+    title: "巴士到站板",
+    sub: "九巴 · 城巴 · 專線小巴 · 嶼巴班次，直接向營辦商實時查詢。",
+    footnote:
+      "資料來源：data.etabus.gov.hk（九巴／龍運）· data.etagmb.gov.hk（專線小巴）· rt.data.gov.hk 城巴＋嶼巴 v2＋批量站牌。靜態路線資料快取 24 小時；到站時間每 30 秒更新。",
+    loadingKmb: "正在載入九巴路線…",
+    loadingCtb: "正在載入城巴路線…",
+    loadingGmb: "正在載入專線小巴路線…",
+    loadingNlb: "正在載入嶼巴路線…",
+    filterRoutes: (n: number) => `篩選路線 · 共 ${n} 個組合`,
+    phKmb: "例如 1A、968、N216",
+    phCtb: "例如 5B、973、N8X",
+    phNlb: "例如 38、B2、N35",
+    route: "路線",
+    outbound: "去程",
+    inbound: "回程",
+    svc: (s: string) => `班別 ${s}`,
+    pickDirection: "請選擇方向。",
+    stops: (n: number) => `車站 · ${n}`,
+    noStops: "找不到車站。",
+    departuresStop: (s: string) => `班次 · 車站 ${s}`,
+    departuresRouteStop: (r: string, s: string) => `班次 · ${r} @ ${s}`,
+    departuresGmb: (code: string, seq: string, stop: string) => `班次 · ${code} 班次${seq} 車站${stop}`,
+    autoRefresh: "每30秒自動更新",
+    noGPSNote: "noGPS=1 為時間表班次 · 每30秒自動更新",
+    noDepartures: "暫無預定班次。",
+    stopFallback: (seq: number) => `車站 ${seq}`,
+    region: "地區",
+    filterCode: "篩選路線編號，例如 4A",
+    seqBtn: (n: number) => `班次 ${n}`,
+    scheduled: "時間表班次",
+    company: "公司",
+    stopIdLabel: "車站編號",
+    boardPlaceholder: "例如 CTB 002892 · 嶼巴車站編號 · 九巴 EF7743",
+    board: "查詢",
+    routesServing: (n: number) => `途經路線 · ${n}`,
+    noRoutes: "此車站／公司暫無路線資料。",
+    etasTitle: (n: number) => `預計到站 · ${n}`,
+    noBoardEtas: "60分鐘內暫無班次（嶼巴在此時間窗外可能沒有資料）。",
+  },
 };
 
 const ETA_POLL = 30_000;
@@ -48,6 +136,7 @@ function btnCls(active: boolean) {
 }
 
 function EtaLine({ dest, eta, remark, seq }: { dest: string; eta: string | null | undefined; remark?: string; seq?: number }) {
+  const { lang } = useLocale();
   const urgent = eta !== null && eta !== undefined && eta !== "";
   return (
     <li className="flex items-baseline justify-between gap-2 border-b border-line px-3 py-1.5 font-readout text-sm tabular-nums last:border-b-0">
@@ -56,13 +145,14 @@ function EtaLine({ dest, eta, remark, seq }: { dest: string; eta: string | null 
         {dest || "—"}
         {remark && <span className="ml-2 text-[11px] text-muted">{remark}</span>}
       </span>
-      <span className={`shrink-0 font-bold ${urgent ? "" : "text-muted"}`}>{formatEta(eta)}</span>
+      <span className={`shrink-0 font-bold ${urgent ? "" : "text-muted"}`}>{formatEta(eta, lang)}</span>
     </li>
   );
 }
 
 function StopList({ stops, selected, onSelect }: { stops: { id: string; label: string; sub?: string }[]; selected: string | null; onSelect: (id: string) => void }) {
-  if (!stops.length) return <p className="px-3 py-3 font-readout text-xs text-muted">No stops found.</p>;
+  const { lang } = useLocale();
+  if (!stops.length) return <p className="px-3 py-3 font-readout text-xs text-muted">{STR[lang].noStops}</p>;
   return (
     <ul className="max-h-64 overflow-y-auto">
       {stops.map((s) => (
@@ -84,7 +174,9 @@ function StopList({ stops, selected, onSelect }: { stops: { id: string; label: s
 // ---------------------------------------------------------------- KMB
 
 function KmbPane() {
-  const [routes, setRoutes] = useState<{ route: string; bound: string; service_type: string; orig_en: string; dest_en: string }[] | null>(null);
+  const { lang } = useLocale();
+  const t = STR[lang];
+  const [routes, setRoutes] = useState<{ route: string; bound: string; service_type: string; orig_en: string; dest_en: string; orig_tc?: string; dest_tc?: string }[] | null>(null);
   const [stopNames, setStopNames] = useState<Map<string, KmbStop> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -100,16 +192,16 @@ function KmbPane() {
 
   useEffect(() => {
     let live = true;
-    Promise.all([listKmbRoutes(), listKmbStops()])
+    Promise.all([listKmbRoutes(lang), listKmbStops(lang)])
       .then(([r, s]) => {
         if (!live) return;
         setRoutes(r);
         setStopNames(new Map(s.map((x) => [x.stop, x])));
         if (r.length && !routeSel) {
-          const first = r[0].route;
-          setRouteSel(first);
-          setBound(r[0].bound === "inbound" ? "inbound" : "outbound");
-          setSvc(r[0].service_type);
+          const match = r[0];
+          setRouteSel(match.route);
+          setBound(match.bound === "inbound" ? "inbound" : "outbound");
+          setSvc(match.service_type);
         }
       })
       .catch((e) => live && setError(String(e instanceof Error ? e.message : e)));
@@ -117,7 +209,7 @@ function KmbPane() {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [lang]);
 
   const variants = useMemo(() => (routes ?? []).filter((r) => r.route === routeSel), [routes, routeSel]);
   const bounds = useMemo(() => Array.from(new Set(variants.map((v) => v.bound))), [variants]);
@@ -141,7 +233,7 @@ function KmbPane() {
     if (!routeSel || !svc) return;
     let live = true;
     setStopsError(null);
-    getKmbRouteStops(routeSel, bound, svc)
+    getKmbRouteStops(routeSel, bound, svc, lang)
       .then((s) => {
         if (!live) return;
         setStops(s.map((x) => ({ seq: x.seq, stop: x.stop })));
@@ -151,33 +243,34 @@ function KmbPane() {
     return () => {
       live = false;
     };
-  }, [routeSel, bound, svc]);
+  }, [routeSel, bound, svc, lang]);
 
   useEffect(() => {
     if (!stopSel || !routeSel || !svc) return;
     let live = true;
     setEtaError(null);
-    getKmbStopRouteEta(stopSel, routeSel, svc)
+    getKmbStopRouteEta(stopSel, routeSel, svc, lang)
       .then((e) => live && setEtas(e.filter((x) => !x.dir || x.dir === bound)))
       .catch((e) => live && setEtaError(String(e instanceof Error ? e.message : e)));
-    const t = setInterval(() => setEtaTick((x) => x + 1), ETA_POLL);
+    const tm = setInterval(() => setEtaTick((x) => x + 1), ETA_POLL);
     return () => {
       live = false;
-      clearInterval(t);
+      clearInterval(tm);
     };
-  }, [stopSel, routeSel, svc, bound]);
+  }, [stopSel, routeSel, svc, bound, lang]);
   useEffect(() => {
     if (etaTick === 0 || !stopSel || !routeSel || !svc) return;
-    getKmbStopRouteEta(stopSel, routeSel, svc).then((e) => setEtas(e.filter((x) => !x.dir || x.dir === bound))).catch(() => undefined);
-  }, [etaTick, stopSel, routeSel, svc, bound]);
+    getKmbStopRouteEta(stopSel, routeSel, svc, lang).then((e) => setEtas(e.filter((x) => !x.dir || x.dir === bound))).catch(() => undefined);
+  }, [etaTick, stopSel, routeSel, svc, bound, lang]);
 
-  if (!routes) return error ? <ErrorBox message={error} /> : <LoadingLine text="Loading KMB route list…" />;
+  const head = variants.find((v) => v.bound === bound && (!svc || v.service_type === svc));
+  if (!routes) return error ? <ErrorBox message={error} /> : <LoadingLine text={t.loadingKmb} />;
   return (
     <div className="grid gap-0 md:grid-cols-2">
       <div className="border-b-2 border-ink p-3 md:border-b-0 md:border-r-2">
-        <label className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Filter routes · {routes.length} variants</label>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. 1A, 968, N216" className={`${inputCls()} mt-1`} />
-        <label className="mt-2 block font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Route</label>
+        <label className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.filterRoutes(routes.length)}</label>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.phKmb} className={`${inputCls()} mt-1`} />
+        <label className="mt-2 block font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.route}</label>
         <select value={routeSel} onChange={(e) => setRouteSel(e.target.value)} className={`${inputCls()} mt-1`}>
           {filtered.map((r) => (
             <option key={r} value={r}>{r}</option>
@@ -185,22 +278,20 @@ function KmbPane() {
         </select>
         <div className="mt-2 flex flex-wrap gap-1">
           {(["outbound", "inbound"] as const).map((b) => (
-            <button key={b} disabled={!bounds.includes(b)} onClick={() => setBound(b)} className={`${btnCls(bound === b)} disabled:opacity-30`}>{b}</button>
+            <button key={b} disabled={!bounds.includes(b)} onClick={() => setBound(b)} className={`${btnCls(bound === b)} disabled:opacity-30`}>{t[b]}</button>
           ))}
           {svcs.length > 1 && svcs.map((s) => (
-            <button key={s} onClick={() => setSvc(s)} className={btnCls(svc === s)}>svc {s}</button>
+            <button key={s} onClick={() => setSvc(s)} className={btnCls(svc === s)}>{t.svc(s)}</button>
           ))}
         </div>
         <p className="mt-2 font-readout text-[11px] text-muted">
-          {variants.find((v) => v.bound === bound && (!svc || v.service_type === svc))
-            ? `${variants.find((v) => v.bound === bound && (!svc || v.service_type === svc))?.orig_en} → ${variants.find((v) => v.bound === bound && (!svc || v.service_type === svc))?.dest_en}`
-            : "Pick a direction."}
+          {head ? `${dispOrig(head, lang)} → ${dispDest(head, lang)}` : t.pickDirection}
         </p>
         <div className="mt-2 border-2 border-ink">
-          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">Stops · {stops.length}</p>
+          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">{t.stops(stops.length)}</p>
           {stopsError ? <ErrorBox message={stopsError} /> : (
             <StopList
-              stops={stops.map((s) => ({ id: s.stop, label: stopNames?.get(s.stop)?.name_en ?? `seq ${s.seq}`, sub: `#${s.seq}` }))}
+              stops={stops.map((s) => ({ id: s.stop, label: dispName(stopNames?.get(s.stop), lang) || t.stopFallback(s.seq), sub: `#${s.seq}` }))}
               selected={stopSel}
               onSelect={setStopSel}
             />
@@ -208,14 +299,14 @@ function KmbPane() {
         </div>
       </div>
       <div className="p-3">
-        <p className="font-display text-sm font-bold uppercase tracking-wide">Departures · stop {stopSel ?? "—"}</p>
-        <p className="font-readout text-[11px] text-muted">{stopNames?.get(stopSel ?? "")?.name_en ?? ""} · auto-refresh 30s</p>
+        <p className="font-display text-sm font-bold uppercase tracking-wide">{t.departuresStop(stopSel ?? "—")}</p>
+        <p className="font-readout text-[11px] text-muted">{dispName(stopNames?.get(stopSel ?? ""), lang)} · {t.autoRefresh}</p>
         {etaError ? <ErrorBox message={etaError} /> : etas.length === 0 ? (
-          <p className="mt-2 font-readout text-xs text-muted">No scheduled departures.</p>
+          <p className="mt-2 font-readout text-xs text-muted">{t.noDepartures}</p>
         ) : (
           <ul className="mt-2 border-2 border-ink">
             {etas.slice(0, 12).map((e, i) => (
-              <EtaLine key={`${e.seq}-${e.eta_seq ?? i}-${e.eta ?? ""}`} dest={e.dest_en} eta={e.eta} remark={e.rmk_en || undefined} seq={e.seq} />
+              <EtaLine key={`${e.seq}-${e.eta_seq ?? i}-${e.eta ?? ""}`} dest={dispDest(e, lang)} eta={e.eta} remark={dispRemark(e, lang) || undefined} seq={e.seq} />
             ))}
           </ul>
         )}
@@ -227,13 +318,15 @@ function KmbPane() {
 // ---------------------------------------------------------------- Citybus
 
 function CtbPane() {
-  const [routes, setRoutes] = useState<{ route: string; orig_en: string; dest_en: string }[] | null>(null);
+  const { lang } = useLocale();
+  const t = STR[lang];
+  const [routes, setRoutes] = useState<{ route: string; orig_en: string; dest_en: string; orig_tc?: string; dest_tc?: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [routeSel, setRouteSel] = useState("");
   const [bound, setBound] = useState<"outbound" | "inbound">("outbound");
   const [stopIds, setStopIds] = useState<{ seq: number; stop: string }[]>([]);
-  const [stopMeta, setStopMeta] = useState<Record<string, string>>({});
+  const [stopMeta, setStopMeta] = useState<Record<string, CtbStop>>({});
   const [stopSel, setStopSel] = useState<string | null>(null);
   const [etas, setEtas] = useState<CtbEta[]>([]);
   const [etaError, setEtaError] = useState<string | null>(null);
@@ -241,7 +334,7 @@ function CtbPane() {
 
   useEffect(() => {
     let live = true;
-    listCtbRoutes()
+    listCtbRoutes(lang)
       .then((r) => {
         if (!live) return;
         setRoutes(r);
@@ -251,7 +344,7 @@ function CtbPane() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [lang]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -264,17 +357,17 @@ function CtbPane() {
   useEffect(() => {
     if (!routeSel) return;
     let live = true;
-    getCtbRouteStops(routeSel, bound)
+    getCtbRouteStops(routeSel, bound, lang)
       .then(async (s) => {
         if (!live) return;
         setStopIds(s.map((x) => ({ seq: x.seq, stop: x.stop })));
         setStopSel((prev) => (prev && s.some((x) => x.stop === prev) ? prev : (s[0]?.stop ?? null)));
         const missing = s.map((x) => x.stop).filter((id) => !(id in stopMeta)).slice(0, 60);
-        const got = await Promise.allSettled(missing.map((id) => getCtbStop(id)));
+        const got = await Promise.allSettled(missing.map((id) => getCtbStop(id, lang)));
         if (!live) return;
-        const next: Record<string, string> = {};
+        const next: Record<string, CtbStop> = {};
         got.forEach((r, i) => {
-          if (r.status === "fulfilled" && r.value) next[missing[i]] = r.value.name_en;
+          if (r.status === "fulfilled" && r.value) next[missing[i]] = r.value;
         });
         if (Object.keys(next).length) setStopMeta((p) => ({ ...p, ...next }));
       })
@@ -283,57 +376,57 @@ function CtbPane() {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeSel, bound]);
+  }, [routeSel, bound, lang]);
 
   useEffect(() => {
     if (!stopSel || !routeSel) return;
     let live = true;
     setEtaError(null);
-    getCtbEtas(stopSel, routeSel)
+    getCtbEtas(stopSel, routeSel, lang)
       .then((e) => live && setEtas(e.filter((x) => !bound || x.dir === bound)))
       .catch((e) => live && setEtaError(String(e instanceof Error ? e.message : e)));
-    const t = setInterval(() => setTick((x) => x + 1), ETA_POLL);
+    const tm = setInterval(() => setTick((x) => x + 1), ETA_POLL);
     return () => {
       live = false;
-      clearInterval(t);
+      clearInterval(tm);
     };
-  }, [stopSel, routeSel, bound]);
+  }, [stopSel, routeSel, bound, lang]);
   useEffect(() => {
     if (tick === 0 || !stopSel || !routeSel) return;
-    getCtbEtas(stopSel, routeSel).then((e) => setEtas(e.filter((x) => !bound || x.dir === bound))).catch(() => undefined);
-  }, [tick, stopSel, routeSel, bound]);
+    getCtbEtas(stopSel, routeSel, lang).then((e) => setEtas(e.filter((x) => !bound || x.dir === bound))).catch(() => undefined);
+  }, [tick, stopSel, routeSel, bound, lang]);
 
-  if (!routes) return error ? <ErrorBox message={error} /> : <LoadingLine text="Loading Citybus routes…" />;
+  if (!routes) return error ? <ErrorBox message={error} /> : <LoadingLine text={t.loadingCtb} />;
   return (
     <div className="grid gap-0 md:grid-cols-2">
       <div className="border-b-2 border-ink p-3 md:border-b-0 md:border-r-2">
-        <label className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Filter routes · {routes.length}</label>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. 5B, 973, N8X" className={`${inputCls()} mt-1`} />
+        <label className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.filterRoutes(routes.length)}</label>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.phCtb} className={`${inputCls()} mt-1`} />
         <select value={routeSel} onChange={(e) => setRouteSel(e.target.value)} className={`${inputCls()} mt-2`}>
           {filtered.map((r) => (
-            <option key={r.route} value={r.route}>{r.route} · {r.orig_en} → {r.dest_en}</option>
+            <option key={r.route} value={r.route}>{r.route} · {dispOrig(r, lang)} → {dispDest(r, lang)}</option>
           ))}
         </select>
         <div className="mt-2 flex gap-1">
           {(["outbound", "inbound"] as const).map((b) => (
-            <button key={b} onClick={() => setBound(b)} className={btnCls(bound === b)}>{b}</button>
+            <button key={b} onClick={() => setBound(b)} className={btnCls(bound === b)}>{t[b]}</button>
           ))}
         </div>
-        {head && <p className="mt-2 font-readout text-[11px] text-muted">{head.orig_en} → {head.dest_en}</p>}
+        {head && <p className="mt-2 font-readout text-[11px] text-muted">{dispOrig(head, lang)} → {dispDest(head, lang)}</p>}
         <div className="mt-2 border-2 border-ink">
-          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">Stops · {stopIds.length}</p>
-          <StopList stops={stopIds.map((s) => ({ id: s.stop, label: stopMeta[s.stop] ?? `seq ${s.seq}`, sub: `#${s.seq}` }))} selected={stopSel} onSelect={setStopSel} />
+          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">{t.stops(stopIds.length)}</p>
+          <StopList stops={stopIds.map((s) => ({ id: s.stop, label: dispName(stopMeta[s.stop], lang) || t.stopFallback(s.seq), sub: `#${s.seq}` }))} selected={stopSel} onSelect={setStopSel} />
         </div>
       </div>
       <div className="p-3">
-        <p className="font-display text-sm font-bold uppercase tracking-wide">Departures · {routeSel} @ {stopSel ?? "—"}</p>
-        <p className="font-readout text-[11px] text-muted">{stopMeta[stopSel ?? ""] ?? ""} · auto-refresh 30s</p>
+        <p className="font-display text-sm font-bold uppercase tracking-wide">{t.departuresRouteStop(routeSel, stopSel ?? "—")}</p>
+        <p className="font-readout text-[11px] text-muted">{dispName(stopMeta[stopSel ?? ""], lang)} · {t.autoRefresh}</p>
         {etaError ? <ErrorBox message={etaError} /> : etas.length === 0 ? (
-          <p className="mt-2 font-readout text-xs text-muted">No scheduled departures.</p>
+          <p className="mt-2 font-readout text-xs text-muted">{t.noDepartures}</p>
         ) : (
           <ul className="mt-2 border-2 border-ink">
             {etas.slice(0, 12).map((e, i) => (
-              <EtaLine key={`${e.seq}-${i}-${e.eta ?? ""}`} dest={e.dest_en ?? routeSel} eta={e.eta} remark={e.rmk_en || undefined} seq={e.seq} />
+              <EtaLine key={`${e.seq}-${i}-${e.eta ?? ""}`} dest={dispDest(e, lang) || routeSel} eta={e.eta} remark={dispRemark(e, lang) || undefined} seq={e.seq} />
             ))}
           </ul>
         )}
@@ -345,17 +438,19 @@ function CtbPane() {
 // ---------------------------------------------------------------- GMB
 
 function GmbPane() {
+  const { lang } = useLocale();
+  const t = STR[lang];
   const [region, setRegion] = useState<GmbRegion>("HKI");
   const [codes, setCodes] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [code, setCode] = useState("");
-  const [seqs, setSeqs] = useState<{ route_seq: number; orig_en?: string; dest_en?: string }[]>([]);
+  const [seqs, setSeqs] = useState<{ route_seq: number; orig_en?: string; dest_en?: string; orig_tc?: string; dest_tc?: string; orig_ch?: string; dest_ch?: string }[]>([]);
   const [routeId, setRouteId] = useState<number | null>(null);
   const [seq, setSeq] = useState<number | null>(null);
-  const [stops, setStops] = useState<{ stop_seq: number; stop_id: number; name_en?: string }[]>([]);
+  const [stops, setStops] = useState<{ stop_seq: number; stop_id: number; name_en?: string; name_tc?: string; name_ch?: string }[]>([]);
   const [stopSel, setStopSel] = useState<number | null>(null);
-  const [etas, setEtas] = useState<{ eta?: string | null; remarks_en?: string }[]>([]);
+  const [etas, setEtas] = useState<{ eta?: string | null; remarks_en?: string; remarks_tc?: string; remarks_ch?: string }[]>([]);
   const [etaError, setEtaError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -363,7 +458,7 @@ function GmbPane() {
     let live = true;
     setCodes(null);
     setError(null);
-    listGmbRoutes(region)
+    listGmbRoutes(region, lang)
       .then((r) => {
         if (!live) return;
         setCodes(r);
@@ -373,7 +468,7 @@ function GmbPane() {
     return () => {
       live = false;
     };
-  }, [region]);
+  }, [region, lang]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -384,11 +479,11 @@ function GmbPane() {
   useEffect(() => {
     if (!code) return;
     let live = true;
-    getGmbRoute(region, code)
+    getGmbRoute(region, code, lang)
       .then((d) => {
         if (!live || !d) return;
         setRouteId(d.route_id);
-        const dirs = (d.directions ?? []).map((x) => ({ route_seq: x.route_seq, orig_en: x.orig_en, dest_en: x.dest_en }));
+        const dirs = (d.directions ?? []).map((x) => ({ route_seq: x.route_seq, orig_en: x.orig_en, dest_en: x.dest_en, orig_tc: x.orig_tc, dest_tc: x.dest_tc, orig_ch: x.orig_ch, dest_ch: x.dest_ch }));
         setSeqs(dirs);
         setSeq((p) => (p && dirs.some((x) => x.route_seq === p) ? p : (dirs[0]?.route_seq ?? null)));
       })
@@ -396,12 +491,12 @@ function GmbPane() {
     return () => {
       live = false;
     };
-  }, [region, code]);
+  }, [region, code, lang]);
 
   useEffect(() => {
     if (routeId === null || seq === null) return;
     let live = true;
-    getGmbRouteStops(routeId, seq)
+    getGmbRouteStops(routeId, seq, lang)
       .then((s) => {
         if (!live) return;
         setStops(s);
@@ -411,36 +506,36 @@ function GmbPane() {
     return () => {
       live = false;
     };
-  }, [routeId, seq]);
+  }, [routeId, seq, lang]);
 
   useEffect(() => {
     if (routeId === null || seq === null || stopSel === null) return;
     let live = true;
     setEtaError(null);
-    getGmbRouteStopEta(routeId, seq, stopSel)
+    getGmbRouteStopEta(routeId, seq, stopSel, lang)
       .then((e) => live && setEtas(e))
       .catch((e) => live && setEtaError(String(e instanceof Error ? e.message : e)));
-    const t = setInterval(() => setTick((x) => x + 1), ETA_POLL);
+    const tm = setInterval(() => setTick((x) => x + 1), ETA_POLL);
     return () => {
       live = false;
-      clearInterval(t);
+      clearInterval(tm);
     };
-  }, [routeId, seq, stopSel]);
+  }, [routeId, seq, stopSel, lang]);
   useEffect(() => {
     if (tick === 0 || routeId === null || seq === null || stopSel === null) return;
-    getGmbRouteStopEta(routeId, seq, stopSel).then((e) => setEtas(e)).catch(() => undefined);
-  }, [tick, routeId, seq, stopSel]);
+    getGmbRouteStopEta(routeId, seq, stopSel, lang).then((e) => setEtas(e)).catch(() => undefined);
+  }, [tick, routeId, seq, stopSel, lang]);
 
   return (
     <div className="grid gap-0 md:grid-cols-2">
       <div className="border-b-2 border-ink p-3 md:border-b-0 md:border-r-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Region</span>
+          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.region}</span>
           <ChipRow options={["HKI", "KLN", "NT"] as GmbRegion[]} value={region} onChange={setRegion} />
         </div>
-        {error ? <ErrorBox message={error} /> : !codes ? <LoadingLine text="Loading GMB routes…" /> : (
+        {error ? <ErrorBox message={error} /> : !codes ? <LoadingLine text={t.loadingGmb} /> : (
           <>
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter route code, e.g. 4A" className={`${inputCls()} mt-2`} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.filterCode} className={`${inputCls()} mt-2`} />
             <select value={code} onChange={(e) => setCode(e.target.value)} className={`${inputCls()} mt-2`}>
               {filtered.map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -452,25 +547,25 @@ function GmbPane() {
           <div className="mt-2 flex flex-wrap gap-1">
             {seqs.map((d) => (
               <button key={d.route_seq} onClick={() => setSeq(d.route_seq)} className={btnCls(seq === d.route_seq)}>
-                seq {d.route_seq}{d.orig_en || d.dest_en ? ` · ${d.orig_en ?? ""}→${d.dest_en ?? ""}` : ""}
+                {t.seqBtn(d.route_seq)}{(dispOrig(d, lang) || dispDest(d, lang)) ? ` · ${dispOrig(d, lang)}→${dispDest(d, lang)}` : ""}
               </button>
             ))}
           </div>
         )}
         <div className="mt-2 border-2 border-ink">
-          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">Stops · {stops.length}</p>
-          <StopList stops={stops.map((s) => ({ id: String(s.stop_seq), label: s.name_en ?? `stop ${s.stop_id}`, sub: `#${s.stop_seq}` }))} selected={stopSel === null ? null : String(stopSel)} onSelect={(id) => setStopSel(Number(id))} />
+          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">{t.stops(stops.length)}</p>
+          <StopList stops={stops.map((s) => ({ id: String(s.stop_seq), label: dispName(s, lang) || t.stopFallback(s.stop_seq), sub: `#${s.stop_seq}` }))} selected={stopSel === null ? null : String(stopSel)} onSelect={(id) => setStopSel(Number(id))} />
         </div>
       </div>
       <div className="p-3">
-        <p className="font-display text-sm font-bold uppercase tracking-wide">Departures · {code} seq {seq ?? "—"} stop {stopSel ?? "—"}</p>
-        <p className="font-readout text-[11px] text-muted">auto-refresh 30s</p>
+        <p className="font-display text-sm font-bold uppercase tracking-wide">{t.departuresGmb(code, seq === null ? "—" : String(seq), stopSel === null ? "—" : String(stopSel))}</p>
+        <p className="font-readout text-[11px] text-muted">{t.autoRefresh}</p>
         {etaError ? <ErrorBox message={etaError} /> : etas.length === 0 ? (
-          <p className="mt-2 font-readout text-xs text-muted">No scheduled departures.</p>
+          <p className="mt-2 font-readout text-xs text-muted">{t.noDepartures}</p>
         ) : (
           <ul className="mt-2 border-2 border-ink">
             {etas.slice(0, 12).map((e, i) => (
-              <EtaLine key={i} dest={stops.find((s) => s.stop_seq === stopSel)?.name_en ?? code} eta={e.eta ?? null} remark={e.remarks_en || undefined} seq={i + 1} />
+              <EtaLine key={i} dest={dispName(stops.find((s) => s.stop_seq === stopSel), lang) || code} eta={e.eta ?? null} remark={dispRemark(e, lang) || undefined} seq={i + 1} />
             ))}
           </ul>
         )}
@@ -482,11 +577,13 @@ function GmbPane() {
 // ---------------------------------------------------------------- NLB
 
 function NlbPane() {
-  const [routes, setRoutes] = useState<{ routeId: string; routeNo: string; routeName_e?: string }[] | null>(null);
+  const { lang } = useLocale();
+  const t = STR[lang];
+  const [routes, setRoutes] = useState<{ routeId: string; routeNo: string; routeName_e?: string; routeName_c?: string; routeName_s?: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [routeId, setRouteId] = useState("");
-  const [stops, setStops] = useState<{ stopId: string; stopName_e?: string }[]>([]);
+  const [stops, setStops] = useState<{ stopId: string; stopName_e?: string; stopName_c?: string; stopName_s?: string }[]>([]);
   const [stopSel, setStopSel] = useState<string | null>(null);
   const [etas, setEtas] = useState<{ estimatedArrivalTime: string; routeVariantName?: string; noGPS?: string }[]>([]);
   const [etaError, setEtaError] = useState<string | null>(null);
@@ -494,7 +591,7 @@ function NlbPane() {
 
   useEffect(() => {
     let live = true;
-    listNlbRoutes()
+    listNlbRoutes(lang)
       .then((r) => {
         if (!live) return;
         setRoutes(r);
@@ -504,18 +601,18 @@ function NlbPane() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [lang]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toUpperCase();
     const all = routes ?? [];
-    return (q ? all.filter((r) => r.routeNo.toUpperCase().includes(q) || (r.routeName_e ?? "").toUpperCase().includes(q)) : all).slice(0, 60);
-  }, [routes, query]);
+    return (q ? all.filter((r) => r.routeNo.toUpperCase().includes(q) || dispRouteName(r, lang).toUpperCase().includes(q)) : all).slice(0, 60);
+  }, [routes, query, lang]);
 
   useEffect(() => {
     if (!routeId) return;
     let live = true;
-    listNlbStops(routeId)
+    listNlbStops(routeId, lang)
       .then((s) => {
         if (!live) return;
         setStops(s);
@@ -525,51 +622,51 @@ function NlbPane() {
     return () => {
       live = false;
     };
-  }, [routeId]);
+  }, [routeId, lang]);
 
   useEffect(() => {
     if (!routeId || !stopSel) return;
     let live = true;
     setEtaError(null);
-    getNlbEtas(routeId, stopSel)
+    getNlbEtas(routeId, stopSel, lang)
       .then((e) => live && setEtas(e))
       .catch((e) => live && setEtaError(String(e instanceof Error ? e.message : e)));
-    const t = setInterval(() => setTick((x) => x + 1), ETA_POLL);
+    const tm = setInterval(() => setTick((x) => x + 1), ETA_POLL);
     return () => {
       live = false;
-      clearInterval(t);
+      clearInterval(tm);
     };
-  }, [routeId, stopSel]);
+  }, [routeId, stopSel, lang]);
   useEffect(() => {
     if (tick === 0 || !routeId || !stopSel) return;
-    getNlbEtas(routeId, stopSel).then((e) => setEtas(e)).catch(() => undefined);
-  }, [tick, routeId, stopSel]);
+    getNlbEtas(routeId, stopSel, lang).then((e) => setEtas(e)).catch(() => undefined);
+  }, [tick, routeId, stopSel, lang]);
 
-  if (!routes) return error ? <ErrorBox message={error} /> : <LoadingLine text="Loading NLB routes…" />;
+  if (!routes) return error ? <ErrorBox message={error} /> : <LoadingLine text={t.loadingNlb} />;
   return (
     <div className="grid gap-0 md:grid-cols-2">
       <div className="border-b-2 border-ink p-3 md:border-b-0 md:border-r-2">
-        <label className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Filter routes · {routes.length}</label>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. 38, B2, N35" className={`${inputCls()} mt-1`} />
+        <label className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.filterRoutes(routes.length)}</label>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.phNlb} className={`${inputCls()} mt-1`} />
         <select value={routeId} onChange={(e) => setRouteId(e.target.value)} className={`${inputCls()} mt-2`}>
           {filtered.map((r) => (
-            <option key={r.routeId} value={r.routeId}>{r.routeNo} · {r.routeName_e ?? r.routeId}</option>
+            <option key={r.routeId} value={r.routeId}>{r.routeNo} · {dispRouteName(r, lang) || r.routeId}</option>
           ))}
         </select>
         <div className="mt-2 border-2 border-ink">
-          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">Stops · {stops.length}</p>
-          <StopList stops={stops.map((s) => ({ id: s.stopId, label: s.stopName_e ?? s.stopId }))} selected={stopSel} onSelect={setStopSel} />
+          <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">{t.stops(stops.length)}</p>
+          <StopList stops={stops.map((s) => ({ id: s.stopId, label: dispStopName(s, lang) || s.stopId }))} selected={stopSel} onSelect={setStopSel} />
         </div>
       </div>
       <div className="p-3">
-        <p className="font-display text-sm font-bold uppercase tracking-wide">Departures · stop {stopSel ?? "—"}</p>
-        <p className="font-readout text-[11px] text-muted">noGPS=1 rows are scheduled · auto-refresh 30s</p>
+        <p className="font-display text-sm font-bold uppercase tracking-wide">{t.departuresStop(stopSel ?? "—")}</p>
+        <p className="font-readout text-[11px] text-muted">{t.noGPSNote}</p>
         {etaError ? <ErrorBox message={etaError} /> : etas.length === 0 ? (
-          <p className="mt-2 font-readout text-xs text-muted">No scheduled departures.</p>
+          <p className="mt-2 font-readout text-xs text-muted">{t.noDepartures}</p>
         ) : (
           <ul className="mt-2 border-2 border-ink">
             {etas.slice(0, 12).map((e, i) => (
-              <EtaLine key={i} dest={e.routeVariantName ?? routes.find((r) => r.routeId === routeId)?.routeNo ?? ""} eta={e.estimatedArrivalTime} remark={e.noGPS === "1" ? "scheduled" : undefined} seq={i + 1} />
+              <EtaLine key={i} dest={e.routeVariantName ?? routes.find((r) => r.routeId === routeId)?.routeNo ?? ""} eta={e.estimatedArrivalTime} remark={e.noGPS === "1" ? t.scheduled : undefined} seq={i + 1} />
             ))}
           </ul>
         )}
@@ -581,26 +678,28 @@ function NlbPane() {
 // ---------------------------------------------------------------- Stop board (DPO batch + KMB stop-eta)
 
 function BoardPane() {
+  const { lang } = useLocale();
+  const t = STR[lang];
   const [co, setCo] = useState<"CTB" | "NLB">("CTB");
   const [stopId, setStopId] = useState("");
-  const [routes, setRoutes] = useState<{ route?: string; orig_en?: string; dest_en?: string }[] | null>(null);
-  const [etas, setEtas] = useState<{ route?: string; eta?: string | null; dest_en?: string; rmk_en?: string }[]>([]);
+  const [routes, setRoutes] = useState<{ route?: string; orig_en?: string; dest_en?: string; orig_tc?: string; dest_tc?: string }[] | null>(null);
+  const [etas, setEtas] = useState<{ route?: string; eta?: string | null; dest_en?: string; dest_tc?: string; rmk_en?: string; rmk_tc?: string }[]>([]);
   const [kmbEtas, setKmbEtas] = useState<KmbEta[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
 
-  const go = async (stop: string, company: "CTB" | "NLB") => {
+  const go = async (stop: string, company: "CTB" | "NLB", l: typeof lang) => {
     const id = stop.trim();
     if (!id) return;
     setBusy(true);
     setError(null);
     try {
-      const [r, e] = await Promise.all([getBatchStopRoutes(company, id), getBatchStopEtas(company, id)]);
+      const [r, e] = await Promise.all([getBatchStopRoutes(company, id, l), getBatchStopEtas(company, id, l)]);
       setRoutes(r);
       setEtas(e);
       try {
-        setKmbEtas(await getKmbStopEtas(id));
+        setKmbEtas(await getKmbStopEtas(id, l));
       } catch {
         setKmbEtas([]);
       }
@@ -615,58 +714,58 @@ function BoardPane() {
 
   useEffect(() => {
     if (tick === 0 || !stopId.trim()) return;
-    getBatchStopEtas(co, stopId.trim()).then((e) => setEtas(e)).catch(() => undefined);
-    getKmbStopEtas(stopId.trim()).then((e) => setKmbEtas(e)).catch(() => undefined);
-  }, [tick, co, stopId]);
+    getBatchStopEtas(co, stopId.trim(), lang).then((e) => setEtas(e)).catch(() => undefined);
+    getKmbStopEtas(stopId.trim(), lang).then((e) => setKmbEtas(e)).catch(() => undefined);
+  }, [tick, co, stopId, lang]);
   useEffect(() => {
-    const t = setInterval(() => setTick((x) => x + 1), ETA_POLL);
-    return () => clearInterval(t);
+    const tm = setInterval(() => setTick((x) => x + 1), ETA_POLL);
+    return () => clearInterval(tm);
   }, []);
 
   return (
     <div className="p-3">
       <div className="flex flex-wrap items-end gap-2">
         <div>
-          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Company</span>
+          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.company}</span>
           <div className="mt-1"><ChipRow options={["CTB", "NLB"] as ("CTB" | "NLB")[]} value={co} onChange={setCo} /></div>
         </div>
         <label className="min-w-48 flex-1">
-          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Stop id</span>
-          <input value={stopId} onChange={(e) => setStopId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go(stopId, co)} placeholder="e.g. CTB 002892 · NLB stop id · KMB EF7743" className={`${inputCls()} mt-1`} />
+          <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">{t.stopIdLabel}</span>
+          <input value={stopId} onChange={(e) => setStopId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go(stopId, co, lang)} placeholder={t.boardPlaceholder} className={`${inputCls()} mt-1`} />
         </label>
-        <button onClick={() => go(stopId, co)} disabled={busy || !stopId.trim()} className="border-2 border-ink bg-signal px-4 py-1.5 font-display text-lg font-bold uppercase text-paper shadow-[3px_3px_0_var(--color-ink)] disabled:opacity-40 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-          {busy ? "…" : "Board"}
+        <button onClick={() => go(stopId, co, lang)} disabled={busy || !stopId.trim()} className="border-2 border-ink bg-signal px-4 py-1.5 font-display text-lg font-bold uppercase text-paper shadow-[3px_3px_0_var(--color-ink)] disabled:opacity-40 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+          {busy ? "…" : t.board}
         </button>
       </div>
       {error && <ErrorBox message={error} />}
       {routes !== null && (
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <div className="border-2 border-ink">
-            <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">Routes serving · {routes.length}</p>
+            <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">{t.routesServing(routes.length)}</p>
             {routes.length === 0 ? (
-              <p className="px-3 py-2 font-readout text-xs text-muted">No routes on file for this stop/company.</p>
+              <p className="px-3 py-2 font-readout text-xs text-muted">{t.noRoutes}</p>
             ) : (
               <ul className="max-h-64 overflow-y-auto">
                 {routes.map((r, i) => (
                   <li key={`${r.route}-${i}`} className="border-b border-line px-3 py-1.5 font-readout text-xs last:border-b-0">
                     <span className="font-bold">{r.route ?? "—"}</span>
-                    <span className="ml-2 text-ink-soft">{[r.orig_en, r.dest_en].filter(Boolean).join(" → ")}</span>
+                    <span className="ml-2 text-ink-soft">{[dispOrig(r, lang), dispDest(r, lang)].filter(Boolean).join(" → ")}</span>
                   </li>
                 ))}
               </ul>
             )}
           </div>
           <div className="border-2 border-ink">
-            <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">ETAs · {etas.length + kmbEtas.length}</p>
+            <p className="border-b-2 border-ink bg-paper-dim px-3 py-1 font-display text-sm font-bold uppercase tracking-wide">{t.etasTitle(etas.length + kmbEtas.length)}</p>
             {etas.length === 0 && kmbEtas.length === 0 ? (
-              <p className="px-3 py-2 font-readout text-xs text-muted">No departures within 60 min (NLB eta may be blank past the window).</p>
+              <p className="px-3 py-2 font-readout text-xs text-muted">{t.noBoardEtas}</p>
             ) : (
               <ul>
                 {etas.slice(0, 12).map((e, i) => (
-                  <EtaLine key={`b-${i}`} dest={`${e.route ?? ""} → ${e.dest_en ?? ""}`} eta={e.eta ?? null} remark={e.rmk_en || undefined} />
+                  <EtaLine key={`b-${i}`} dest={`${e.route ?? ""} → ${dispDest(e, lang)}`} eta={e.eta ?? null} remark={dispRemark(e, lang) || undefined} />
                 ))}
                 {kmbEtas.slice(0, 8).map((e, i) => (
-                  <EtaLine key={`k-${i}`} dest={`${e.route} → ${e.dest_en}`} eta={e.eta} remark={e.rmk_en || "KMB"} seq={e.seq} />
+                  <EtaLine key={`k-${i}`} dest={`${e.route} → ${dispDest(e, lang)}`} eta={e.eta} remark={dispRemark(e, lang) || "KMB"} seq={e.seq} />
                 ))}
               </ul>
             )}
@@ -681,12 +780,14 @@ function BoardPane() {
 
 export default function BusesSection() {
   const [op, setOp] = useState<Op>("kmb");
+  const { lang } = useLocale();
+  const t = STR[lang];
   return (
     <SectionShell
-      kicker="Franchised buses · live ETA"
-      title="Bus bulletin"
-      sub="KMB · Citybus · GMB · NLB departures, polled live from the operators."
-      right={<ChipRow options={OPS} value={op} onChange={setOp} labels={OP_LABEL} />}
+      kicker={t.kicker}
+      title={t.title}
+      sub={t.sub}
+      right={<ChipRow options={OPS} value={op} onChange={setOp} labels={t.ops} />}
     >
       <div className="border-t-2 border-ink">
         {op === "kmb" && <KmbPane />}
@@ -696,7 +797,7 @@ export default function BusesSection() {
         {op === "board" && <BoardPane />}
       </div>
       <p className="border-t border-line px-4 py-2 font-readout text-[11px] text-muted">
-        Sources: data.etabus.gov.hk (KMB/LWB) · data.etagmb.gov.hk (GMB) · rt.data.gov.hk Citybus + NLB v2 + batch board. Static lists cached 24h in memory; ETAs refresh every 30s.
+        {t.footnote}
       </p>
     </SectionShell>
   );

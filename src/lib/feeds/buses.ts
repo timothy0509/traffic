@@ -4,6 +4,7 @@
 // fresh (or with a 20s dedupe window) and callers poll every ~30s.
 
 import { cached, fetchJson } from "../http";
+import { lf, type Locale } from "../locale";
 
 const DAY = 24 * 60 * 60 * 1000;
 const ETA_TTL = 20 * 1000;
@@ -31,12 +32,43 @@ export function minutesUntil(when: string | null | undefined): number | null {
   return Math.round((t - Date.now()) / 60000);
 }
 
-export function formatEta(when: string | null | undefined): string {
+export function formatEta(when: string | null | undefined, lang: Locale = "en"): string {
   const m = minutesUntil(when);
   if (m === null) return "--";
-  if (m <= 0) return "now";
-  if (m === 1) return "1 min";
-  return `${m} min`;
+  if (m <= 0) return lang === "tc" ? "即到" : "now";
+  if (m === 1) return lang === "tc" ? "1 分鐘" : "1 min";
+  return lang === "tc" ? `${m} 分鐘` : `${m} min`;
+}
+
+/** Localized display name for a stop-like record (name_en/name_tc, ...). */
+export function dispName(obj: unknown, lang: Locale): string {
+  return lf(obj as Record<string, unknown> | undefined | null, "name", lang);
+}
+
+/** Localized display origin for a route-like record. */
+export function dispOrig(obj: unknown, lang: Locale): string {
+  return lf(obj as Record<string, unknown> | undefined | null, "orig", lang);
+}
+
+/** Localized display destination for a route/ETA-like record. */
+export function dispDest(obj: unknown, lang: Locale): string {
+  return lf(obj as Record<string, unknown> | undefined | null, "dest", lang);
+}
+
+/** Localized display remark for an ETA-like record (rmk_en/rmk_tc, remarks_en/...). */
+export function dispRemark(obj: unknown, lang: Locale): string {
+  return lf(obj as Record<string, unknown> | undefined | null, "rmk", lang)
+    || lf(obj as Record<string, unknown> | undefined | null, "remarks", lang);
+}
+
+/** Localized display route name for an NLB record (routeName_e/routeName_c/routeName_s). */
+export function dispRouteName(obj: unknown, lang: Locale): string {
+  return lf(obj as Record<string, unknown> | undefined | null, "routeName", lang);
+}
+
+/** Localized display stop name for an NLB record (stopName_e/stopName_c). */
+export function dispStopName(obj: unknown, lang: Locale): string {
+  return lf(obj as Record<string, unknown> | undefined | null, "stopName", lang);
 }
 
 // ---------------------------------------------------------------- KMB/LWB
@@ -73,21 +105,23 @@ export interface KmbEta {
   seq: number;
   stop_seq?: number;
   dest_en: string;
+  dest_tc?: string;
   eta: string | null;
   eta_seq?: number;
   rmk_en?: string;
+  rmk_tc?: string;
   data_timestamp?: string;
 }
 
-export async function listKmbRoutes(): Promise<KmbRouteItem[]> {
-  return cached("kmb:routes", DAY, async () => {
+export async function listKmbRoutes(lang: Locale = "en"): Promise<KmbRouteItem[]> {
+  return cached(`kmb:routes:${lang}`, DAY, async () => {
     const json = await fetchJson<unknown>(`${KMB_BASE}/route/`);
     return unwrap<KmbRouteItem[]>(json) ?? [];
   });
 }
 
-export async function getKmbRoute(route: string, bound: string, serviceType: string): Promise<KmbRouteItem | null> {
-  return cached(`kmb:route:${route}:${bound}:${serviceType}`, DAY, async () => {
+export async function getKmbRoute(route: string, bound: string, serviceType: string, lang: Locale = "en"): Promise<KmbRouteItem | null> {
+  return cached(`kmb:route:${route}:${bound}:${serviceType}:${lang}`, DAY, async () => {
     try {
       const json = await fetchJson<unknown>(`${KMB_BASE}/route/${encodeURIComponent(route)}/${bound}/${encodeURIComponent(serviceType)}`);
       return unwrap<KmbRouteItem | null>(json) ?? null;
@@ -97,15 +131,15 @@ export async function getKmbRoute(route: string, bound: string, serviceType: str
   });
 }
 
-export async function listKmbStops(): Promise<KmbStop[]> {
-  return cached("kmb:stops", DAY, async () => {
+export async function listKmbStops(lang: Locale = "en"): Promise<KmbStop[]> {
+  return cached(`kmb:stops:${lang}`, DAY, async () => {
     const json = await fetchJson<unknown>(`${KMB_BASE}/stop`);
     return unwrap<KmbStop[]>(json) ?? [];
   });
 }
 
-export async function getKmbStop(stopId: string): Promise<KmbStop | null> {
-  return cached(`kmb:stop:${stopId}`, DAY, async () => {
+export async function getKmbStop(stopId: string, lang: Locale = "en"): Promise<KmbStop | null> {
+  return cached(`kmb:stop:${stopId}:${lang}`, DAY, async () => {
     try {
       const json = await fetchJson<unknown>(`${KMB_BASE}/stop/${encodeURIComponent(stopId)}`);
       return unwrap<KmbStop | null>(json) ?? null;
@@ -115,8 +149,8 @@ export async function getKmbStop(stopId: string): Promise<KmbStop | null> {
   });
 }
 
-export async function getKmbRouteStops(route: string, bound: string, serviceType: string): Promise<KmbRouteStop[]> {
-  return cached(`kmb:routestop:${route}:${bound}:${serviceType}`, DAY, async () => {
+export async function getKmbRouteStops(route: string, bound: string, serviceType: string, lang: Locale = "en"): Promise<KmbRouteStop[]> {
+  return cached(`kmb:routestop:${route}:${bound}:${serviceType}:${lang}`, DAY, async () => {
     const json = await fetchJson<unknown>(`${KMB_BASE}/route-stop/${encodeURIComponent(route)}/${bound}/${encodeURIComponent(serviceType)}`);
     return unwrap<KmbRouteStop[]>(json) ?? [];
   });
@@ -130,19 +164,19 @@ async function fetchKmbEta(url: string): Promise<KmbEta[]> {
 }
 
 /** ETAs for one stop + route (both directions come back; filter by dir if needed). */
-export function getKmbStopRouteEta(stopId: string, route: string, serviceType: string): Promise<KmbEta[]> {
+export function getKmbStopRouteEta(stopId: string, route: string, serviceType: string, lang: Locale = "en"): Promise<KmbEta[]> {
   return fetchKmbEta(`${KMB_BASE}/eta/${encodeURIComponent(stopId)}/${encodeURIComponent(route)}/${encodeURIComponent(serviceType)}`);
 }
 
 /** All routes calling at a stop. */
-export function getKmbStopEtas(stopId: string): Promise<KmbEta[]> {
-  const key = `kmb:eta:stop:${stopId}`;
+export function getKmbStopEtas(stopId: string, lang: Locale = "en"): Promise<KmbEta[]> {
+  const key = `kmb:eta:stop:${stopId}:${lang}`;
   return cached(key, ETA_TTL, () => fetchKmbEta(`${KMB_BASE}/stop-eta/${encodeURIComponent(stopId)}`));
 }
 
 /** Whole-route ETA board. */
-export function getKmbRouteEtas(route: string, serviceType: string): Promise<KmbEta[]> {
-  const key = `kmb:eta:route:${route}:${serviceType}`;
+export function getKmbRouteEtas(route: string, serviceType: string, lang: Locale = "en"): Promise<KmbEta[]> {
+  const key = `kmb:eta:route:${route}:${serviceType}:${lang}`;
   return cached(key, ETA_TTL, () => fetchKmbEta(`${KMB_BASE}/route-eta/${encodeURIComponent(route)}/${encodeURIComponent(serviceType)}`));
 }
 
@@ -156,7 +190,11 @@ export interface GmbDirection {
   dest_en?: string;
   orig_tc?: string;
   dest_tc?: string;
+  orig_ch?: string;
+  dest_ch?: string;
   headway_en?: string;
+  headway_tc?: string;
+  headway_ch?: string;
 }
 
 export interface GmbRouteDetail {
@@ -180,17 +218,23 @@ export interface GmbEtaItem {
   eta?: string | null;
   timestamp?: string;
   remarks_en?: string;
+  remarks_tc?: string;
+  remarks_ch?: string;
   dest_en?: string;
+  dest_tc?: string;
+  dest_ch?: string;
 }
 
 export interface GmbStopInfo {
   stop_id?: number;
   name_en?: string;
+  name_tc?: string;
+  name_ch?: string;
   coordinates?: { wgs84?: { latitude?: number; longitude?: number } };
 }
 
-export async function listGmbRoutes(region: GmbRegion): Promise<string[]> {
-  return cached(`gmb:routes:${region}`, DAY, async () => {
+export async function listGmbRoutes(region: GmbRegion, lang: Locale = "en"): Promise<string[]> {
+  return cached(`gmb:routes:${region}:${lang}`, DAY, async () => {
     const json = await fetchJson<unknown>(`${GMB_BASE}/route/${region}`);
     if (json !== null && typeof json === "object" && "routes" in json) {
       const r = (json as { routes: unknown }).routes;
@@ -201,8 +245,8 @@ export async function listGmbRoutes(region: GmbRegion): Promise<string[]> {
   });
 }
 
-export async function getGmbRoute(region: GmbRegion, code: string): Promise<GmbRouteDetail | null> {
-  return cached(`gmb:route:${region}:${code}`, DAY, async () => {
+export async function getGmbRoute(region: GmbRegion, code: string, lang: Locale = "en"): Promise<GmbRouteDetail | null> {
+  return cached(`gmb:route:${region}:${code}:${lang}`, DAY, async () => {
     try {
       const json = await fetchJson<unknown>(`${GMB_BASE}/route/${region}/${encodeURIComponent(code)}`);
       const data = unwrap<GmbRouteDetail | null>(json);
@@ -213,8 +257,8 @@ export async function getGmbRoute(region: GmbRegion, code: string): Promise<GmbR
   });
 }
 
-export async function getGmbRouteStops(routeId: number, routeSeq: number): Promise<GmbRouteStop[]> {
-  return cached(`gmb:routestop:${routeId}:${routeSeq}`, DAY, async () => {
+export async function getGmbRouteStops(routeId: number, routeSeq: number, lang: Locale = "en"): Promise<GmbRouteStop[]> {
+  return cached(`gmb:routestop:${routeId}:${routeSeq}:${lang}`, DAY, async () => {
     const json = await fetchJson<unknown>(`${GMB_BASE}/route-stop/${routeId}/${routeSeq}`);
     if (json !== null && typeof json === "object" && "route_stops" in json) {
       const r = (json as { route_stops: unknown }).route_stops;
@@ -225,8 +269,8 @@ export async function getGmbRouteStops(routeId: number, routeSeq: number): Promi
   });
 }
 
-export function getGmbRouteStopEta(routeId: number, routeSeq: number, stopSeq: number): Promise<GmbEtaItem[]> {
-  const key = `gmb:eta:${routeId}:${routeSeq}:${stopSeq}`;
+export function getGmbRouteStopEta(routeId: number, routeSeq: number, stopSeq: number, lang: Locale = "en"): Promise<GmbEtaItem[]> {
+  const key = `gmb:eta:${routeId}:${routeSeq}:${stopSeq}:${lang}`;
   return cached(key, ETA_TTL, async () => {
     const json = await fetchJson<unknown>(`${GMB_BASE}/eta/route-stop/${routeId}/${routeSeq}/${stopSeq}`);
     if (json !== null && typeof json === "object" && "eta" in json) {
@@ -240,8 +284,8 @@ export function getGmbRouteStopEta(routeId: number, routeSeq: number, stopSeq: n
   });
 }
 
-export function getGmbStopEta(stopId: number | string): Promise<GmbEtaItem[]> {
-  const key = `gmb:eta:stop:${stopId}`;
+export function getGmbStopEta(stopId: number | string, lang: Locale = "en"): Promise<GmbEtaItem[]> {
+  const key = `gmb:eta:stop:${stopId}:${lang}`;
   return cached(key, ETA_TTL, async () => {
     const json = await fetchJson<unknown>(`${GMB_BASE}/eta/stop/${encodeURIComponent(String(stopId))}`);
     if (json !== null && typeof json === "object" && "eta" in json) {
@@ -255,8 +299,8 @@ export function getGmbStopEta(stopId: number | string): Promise<GmbEtaItem[]> {
   });
 }
 
-export async function getGmbStop(stopId: number | string): Promise<GmbStopInfo | null> {
-  return cached(`gmb:stop:${stopId}`, DAY, async () => {
+export async function getGmbStop(stopId: number | string, lang: Locale = "en"): Promise<GmbStopInfo | null> {
+  return cached(`gmb:stop:${stopId}:${lang}`, DAY, async () => {
     try {
       const json = await fetchJson<unknown>(`${GMB_BASE}/stop/${encodeURIComponent(String(stopId))}`);
       return unwrap<GmbStopInfo | null>(json) ?? null;
@@ -300,26 +344,28 @@ export interface CtbEta {
   eta: string | null;
   eta_seq?: number;
   dest_en?: string;
+  dest_tc?: string;
   rmk_en?: string;
+  rmk_tc?: string;
   data_timestamp?: string;
 }
 
-export async function listCtbRoutes(): Promise<CtbRoute[]> {
-  return cached("ctb:routes", DAY, async () => {
+export async function listCtbRoutes(lang: Locale = "en"): Promise<CtbRoute[]> {
+  return cached(`ctb:routes:${lang}`, DAY, async () => {
     const json = await fetchJson<unknown>(`${CTB_BASE}/route/ctb`);
     return unwrap<CtbRoute[]>(json) ?? [];
   });
 }
 
-export async function getCtbRouteStops(route: string, bound: "outbound" | "inbound"): Promise<CtbRouteStop[]> {
-  return cached(`ctb:routestop:${route}:${bound}`, DAY, async () => {
+export async function getCtbRouteStops(route: string, bound: "outbound" | "inbound", lang: Locale = "en"): Promise<CtbRouteStop[]> {
+  return cached(`ctb:routestop:${route}:${bound}:${lang}`, DAY, async () => {
     const json = await fetchJson<unknown>(`${CTB_BASE}/route-stop/ctb/${encodeURIComponent(route)}/${bound}`);
     return unwrap<CtbRouteStop[]>(json) ?? [];
   });
 }
 
-export async function getCtbStop(stopId: string): Promise<CtbStop | null> {
-  return cached(`ctb:stop:${stopId}`, DAY, async () => {
+export async function getCtbStop(stopId: string, lang: Locale = "en"): Promise<CtbStop | null> {
+  return cached(`ctb:stop:${stopId}:${lang}`, DAY, async () => {
     try {
       const json = await fetchJson<unknown>(`${CTB_BASE}/stop/${encodeURIComponent(stopId)}`);
       return unwrap<CtbStop | null>(json) ?? null;
@@ -330,8 +376,8 @@ export async function getCtbStop(stopId: string): Promise<CtbStop | null> {
 }
 
 /** Both directions come back for a stop+route pair. */
-export function getCtbEtas(stopId: string, route: string): Promise<CtbEta[]> {
-  const key = `ctb:eta:${stopId}:${route}`;
+export function getCtbEtas(stopId: string, route: string, lang: Locale = "en"): Promise<CtbEta[]> {
+  const key = `ctb:eta:${stopId}:${route}:${lang}`;
   return cached(key, ETA_TTL, async () => {
     const json = await fetchJson<unknown>(`${CTB_BASE}/eta/ctb/${encodeURIComponent(stopId)}/${encodeURIComponent(route)}`);
     const data = unwrap<CtbEta[] | null>(json);
@@ -346,12 +392,14 @@ export interface NlbRoute {
   routeNo: string;
   routeName_e?: string;
   routeName_c?: string;
+  routeName_s?: string;
 }
 
 export interface NlbStop {
   stopId: string;
   stopName_e?: string;
   stopName_c?: string;
+  stopName_s?: string;
   latitude?: string;
   longitude?: string;
   fare?: string;
@@ -365,23 +413,25 @@ export interface NlbEta {
   wheelChair?: string;
 }
 
-export async function listNlbRoutes(): Promise<NlbRoute[]> {
-  return cached("nlb:routes", DAY, async () => {
+export async function listNlbRoutes(lang: Locale = "en"): Promise<NlbRoute[]> {
+  return cached(`nlb:routes:${lang}`, DAY, async () => {
     const json = await fetchJson<{ routes?: NlbRoute[] }>(`${NLB_BASE}/route.php?action=list`);
     return Array.isArray(json.routes) ? json.routes : [];
   });
 }
 
-export async function listNlbStops(routeId: string): Promise<NlbStop[]> {
-  return cached(`nlb:stops:${routeId}`, DAY, async () => {
+export async function listNlbStops(routeId: string, lang: Locale = "en"): Promise<NlbStop[]> {
+  return cached(`nlb:stops:${routeId}:${lang}`, DAY, async () => {
     const json = await fetchJson<{ stops?: NlbStop[] }>(`${NLB_BASE}/stop.php?action=list&routeId=${encodeURIComponent(routeId)}`);
     return Array.isArray(json.stops) ? (json.stops as NlbStop[]) : [];
   });
 }
 
-export function getNlbEtas(routeId: string, stopId: string): Promise<NlbEta[]> {
-  const key = `nlb:eta:${routeId}:${stopId}`;
+export function getNlbEtas(routeId: string, stopId: string, lang: Locale = "en"): Promise<NlbEta[]> {
+  const key = `nlb:eta:${routeId}:${stopId}:${lang}`;
   return cached(key, ETA_TTL, async () => {
+    // NOTE: `language=tc` and `language=zh-hant` both return 200 but with
+    // English-only text (routeVariantName/message), so always request `en`.
     const json = await fetchJson<{ estimatedArrivals?: NlbEta[] }>(
       `${NLB_BASE}/stop.php?action=estimatedArrivals&routeId=${encodeURIComponent(routeId)}&stopId=${encodeURIComponent(stopId)}&language=en`,
     );
@@ -395,6 +445,8 @@ export interface BatchStopRoute {
   route?: string;
   orig_en?: string;
   dest_en?: string;
+  orig_tc?: string;
+  dest_tc?: string;
   service_type?: string;
   [k: string]: unknown;
 }
@@ -405,21 +457,25 @@ export interface BatchStopEta {
   seq?: number;
   eta?: string | null;
   dest_en?: string;
+  dest_tc?: string;
   rmk_en?: string;
+  rmk_tc?: string;
   [k: string]: unknown;
 }
 
-export async function getBatchStopRoutes(co: "CTB" | "NLB", stopId: string): Promise<BatchStopRoute[]> {
-  const json = await fetchJson<unknown>(`${DPO_BASE}/v1.1/transport/batch/stop-route/${co}/${encodeURIComponent(stopId)}`);
+export async function getBatchStopRoutes(co: "CTB" | "NLB", stopId: string, lang: Locale = "en"): Promise<BatchStopRoute[]> {
+  const q = lang === "tc" ? "zh-hant" : "en";
+  const json = await fetchJson<unknown>(`${DPO_BASE}/v1.1/transport/batch/stop-route/${co}/${encodeURIComponent(stopId)}?lang=${q}`);
   const data = unwrap<BatchStopRoute[] | BatchStopRoute | null>(json);
   if (!data) return [];
   return Array.isArray(data) ? data : [data];
 }
 
-export function getBatchStopEtas(co: "CTB" | "NLB", stopId: string): Promise<BatchStopEta[]> {
-  const key = `batch:eta:${co}:${stopId}`;
+export function getBatchStopEtas(co: "CTB" | "NLB", stopId: string, lang: Locale = "en"): Promise<BatchStopEta[]> {
+  const key = `batch:eta:${co}:${stopId}:${lang}`;
   return cached(key, ETA_TTL, async () => {
-    const json = await fetchJson<unknown>(`${DPO_BASE}/v1/transport/batch/stop-eta/${co}/${encodeURIComponent(stopId)}`);
+    const q = lang === "tc" ? "zh-hant" : "en";
+    const json = await fetchJson<unknown>(`${DPO_BASE}/v1/transport/batch/stop-eta/${co}/${encodeURIComponent(stopId)}?lang=${q}`);
     const data = unwrap<BatchStopEta[] | BatchStopEta | null>(json);
     if (!data) return [];
     return Array.isArray(data) ? data : [data];

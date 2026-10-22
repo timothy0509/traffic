@@ -1,4 +1,5 @@
-import { cached, fetchViaRelay } from "../http";
+import { cached, fetchViaRelay, fetchViaRelayBytes } from "../http";
+import type { Locale } from "../locale";
 
 // Typed clients for the statistics feeds. All go through the same-origin
 // relay (/api/relay, see api/relay.ts) because the upstream hosts send no
@@ -68,9 +69,9 @@ function dimOf(row: CensusRawRow): string | undefined {
   return parts.length ? parts.join(" / ") : undefined;
 }
 
-export async function censusTable(id: string): Promise<CensusTableData> {
-  return cached(`census:${id}`, 24 * 3600_000, async () => {
-    const url = `https://www.censtatd.gov.hk/api/get.php?id=${encodeURIComponent(id)}&lang=en&full_series=1`;
+export async function censusTable(id: string, lang: Locale = "en"): Promise<CensusTableData> {
+  return cached(`census:${lang}:${id}`, 24 * 3600_000, async () => {
+    const url = `https://www.censtatd.gov.hk/api/get.php?id=${encodeURIComponent(id)}&lang=${lang}&full_series=1`;
     const raw = await fetchViaRelay<CensusRaw>(url, true);
     const title = String(raw.header?.title ?? id);
     const unit = String(raw.header?.unit ?? "");
@@ -124,8 +125,11 @@ interface HkiaRawDay {
   lastUpdatedTime?: string;
 }
 
-export async function hkiaFlights(date: string, arrival: boolean): Promise<HkiaDay> {
-  return cached(`hkia:${date}:${arrival ? "arr" : "dep"}`, 3600_000, async () => {
+export async function hkiaFlights(date: string, arrival: boolean, lang: Locale = "en"): Promise<HkiaDay> {
+  // NOTE: lang=tc was probed 2026-10-22 and the endpoint rejects it
+  // (400 "Invalid value for filtering parameter lang: tc"), so English is
+  // requested for both langs. Cache key still carries lang for a uniform signature.
+  return cached(`hkia:${lang}:${date}:${arrival ? "arr" : "dep"}`, 3600_000, async () => {
     const url =
       `https://www.hongkongairport.com/flightinfo-rest/rest/flights/past` +
       `?date=${encodeURIComponent(date)}&lang=en&cargo=false&arrival=${arrival ? "true" : "false"}`;
@@ -172,14 +176,6 @@ function parseCsv(text: string): { header: string[]; rows: string[][] } {
   return { header, rows: lines.slice(1).map(splitLine) };
 }
 
-function colIdx(header: string[], ...needles: RegExp[]): number {
-  for (const n of needles) {
-    const i = header.findIndex((h) => n.test(h));
-    if (i >= 0) return i;
-  }
-  return -1;
-}
-
 // ---- Customs land-boundary vehicular throughput ----
 
 export interface CustomsRow {
@@ -190,26 +186,26 @@ export interface CustomsRow {
   value: number;
 }
 
-export async function customsThroughput(): Promise<CustomsRow[]> {
-  return cached("customs:land-veh", 24 * 3600_000, async () => {
-    const url = "https://www.customs.gov.hk/hcms/filemanager/common/csv/statistics/passenger_land_en.csv";
+export async function customsThroughput(lang: Locale = "en"): Promise<CustomsRow[]> {
+  return cached(`customs:land-veh:${lang}`, 24 * 3600_000, async () => {
+    const url =
+      lang === "tc"
+        ? "https://www.customs.gov.hk/hcms/filemanager/common/csv/statistics/passenger_land_tc.csv"
+        : "https://www.customs.gov.hk/hcms/filemanager/common/csv/statistics/passenger_land_en.csv";
     const text = await fetchViaRelay<string>(url, false);
-    const { header, rows } = parseCsv(text);
-    const iPoint = colIdx(header, /control point/i);
-    const iVeh = colIdx(header, /vehicle/i);
-    const iYear = colIdx(header, /^year/i);
-    const iQ = colIdx(header, /quarter/i);
-    const iVal = colIdx(header, /throughput/i);
+    // EN and TC headers share the same column order (verified 2026-10-22),
+    // so parse positionally: point, vehicle, year, quarter, value.
+    const { rows } = parseCsv(text);
     const out: CustomsRow[] = [];
     for (const r of rows) {
-      const year = Number((r[iYear] ?? "").replace(/,/g, ""));
-      const value = num(iVal >= 0 ? r[iVal] : undefined);
+      const year = Number((r[2] ?? "").replace(/,/g, ""));
+      const value = num(r[4]);
       if (!Number.isFinite(year) || value === null) continue;
       out.push({
-        point: iPoint >= 0 ? r[iPoint] : "",
-        vehicle: iVeh >= 0 ? r[iVeh] : "",
+        point: r[0] ?? "",
+        vehicle: r[1] ?? "",
         year,
-        quarter: iQ >= 0 ? r[iQ] : "",
+        quarter: r[3] ?? "",
         value,
       });
     }
@@ -228,27 +224,29 @@ export interface PortRow {
   yoy: number | null;
 }
 
-export async function portTeu(): Promise<PortRow[]> {
-  return cached("hkmpdb:teu", 24 * 3600_000, async () => {
-    const url = "https://www.hkmpdb.gov.hk/document/HKP_KTCT-stat_csv1(EN).csv";
-    const text = await fetchViaRelay<string>(url, false);
-    const { header, rows } = parseCsv(text);
-    const iYear = colIdx(header, /year/i);
-    const iMonth = colIdx(header, /month/i);
-    const iTotal = colIdx(header, /total/i);
-    const iKt = colIdx(header, /kwai\s*tsing/i);
-    const iYoy = colIdx(header, /yoy|% change|change/i);
+export async function portTeu(lang: Locale = "en"): Promise<PortRow[]> {
+  return cached(`hkmpdb:teu:${lang}`, 24 * 3600_000, async () => {
+    const url =
+      lang === "tc"
+        ? "https://www.hkmpdb.gov.hk/document/HKP_KTCT-stat_csv1(TC).csv"
+        : "https://www.hkmpdb.gov.hk/document/HKP_KTCT-stat_csv1(EN).csv";
+    const buf = await fetchViaRelayBytes(url);
+    // TC file is Big5-encoded; decode explicitly so month names survive.
+    const text = new TextDecoder(lang === "tc" ? "big5" : "utf-8").decode(buf);
+    // EN and TC headers share the same column order (verified 2026-10-22),
+    // so parse positionally: year, month, KT, other, total, KT-yoy, ... .
+    const { rows } = parseCsv(text);
     const out: PortRow[] = [];
     for (const r of rows) {
-      const year = Number((r[iYear] ?? "").replace(/,/g, ""));
-      const total = num(iTotal >= 0 ? r[iTotal] : undefined);
+      const year = Number((r[0] ?? "").replace(/,/g, ""));
+      const total = num(r[4]);
       if (!Number.isFinite(year) || total === null) continue;
       out.push({
         year,
-        month: iMonth >= 0 ? r[iMonth] : "",
+        month: r[1] ?? "",
         total,
-        kwaiTsing: iKt >= 0 ? num(r[iKt]) : null,
-        yoy: iYoy >= 0 ? num(String(r[iYoy]).replace(/%/g, "")) : null,
+        kwaiTsing: num(r[2]),
+        yoy: r[5] !== undefined ? num(String(r[5]).replace(/%/g, "")) : null,
       });
     }
     return out;

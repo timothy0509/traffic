@@ -3,6 +3,7 @@
 // All hosts below send CORS * (probed 2026-10-22); no backend needed.
 
 import { cached, fetchJson, fetchText } from "../http";
+import { lf, type Locale } from "../locale";
 
 export interface TrafficCamera {
   key: string;
@@ -16,8 +17,10 @@ export interface TrafficCamera {
   pageUrl: string;
 }
 
-const CAMERA_INDEX_URL =
-  "https://static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_En.csv";
+const CAMERA_URL: Record<Locale, string> = {
+  en: "https://static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_En.csv",
+  tc: "https://static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_Tc.csv",
+};
 
 export function cameraImageUrl(key: string): string {
   return `https://tdcctv.data.one.gov.hk/${key}.JPG`;
@@ -28,10 +31,10 @@ function numOrNull(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** UTF-16 tab-separated index (~1020 rows). Cached 24 h. */
-export async function cameraIndex(): Promise<TrafficCamera[]> {
-  return cached("roadextra:cameras", 24 * 3600_000, async () => {
-    const r = await fetch(CAMERA_INDEX_URL);
+/** UTF-16 tab-separated index (~1020 rows). Cached 24 h. File picked by lang. */
+export async function cameraIndex(lang: Locale = "en"): Promise<TrafficCamera[]> {
+  return cached(`roadextra:cameras:${lang}`, 24 * 3600_000, async () => {
+    const r = await fetch(CAMERA_URL[lang] ?? CAMERA_URL.en);
     if (!r.ok) throw new Error(`${r.status} from static.data.gov.hk`);
     const buf = await r.arrayBuffer();
     const text = new TextDecoder("utf-16").decode(buf);
@@ -79,8 +82,8 @@ function tag(row: string, name: string): string {
   return m ? m[1].trim() : "";
 }
 
-/** Journey-time corridors. Caller polls every 2 min; memory cache matches that. */
-export async function corridorTimes(): Promise<CorridorTime[]> {
+/** Journey-time corridors. LOCATION_ID codes only, no language — `_lang` kept for a uniform call signature. */
+export async function corridorTimes(_lang: Locale = "en"): Promise<CorridorTime[]> {
   return cached("roadextra:corridors", 2 * 60_000, async () => {
     const xml = await fetchText(CORRIDOR_URL);
     const rows = xml.match(/<jtis_journey_time>[\s\S]*?<\/jtis_journey_time>/g) ?? [];
@@ -134,40 +137,49 @@ const ROADWORKS_URL =
 interface RoadworkRaw {
   roadworks_id?: string | number;
   workstype?: string;
+  workstype_tc?: string;
   starttime?: string;
   endtime?: string;
   district?: string;
+  district_tc?: string;
   latitude?: number | string;
   longitude?: number | string;
   roadname?: string;
+  roadname_tc?: string;
   locdesc?: string;
+  locdesc_tc?: string;
   bound?: string;
+  bound_tc?: string;
   lane?: string;
+  lane_tc?: string;
   worksstatus?: string;
+  worksstatus_tc?: string;
+  [k: string]: unknown;
 }
 
-/** Roadworks locations. Cached 10 min. */
-export async function roadworkList(): Promise<Roadwork[]> {
-  return cached("roadextra:roadworks", 10 * 60_000, async () => {
+/** Roadworks locations. Cached 10 h-keyed per lang; display strings picked with lf(). */
+export async function roadworkList(lang: Locale = "en"): Promise<Roadwork[]> {
+  return cached(`roadextra:roadworks:${lang}`, 10 * 60_000, async () => {
     const raw = await fetchJson<RoadworkRaw[]>(ROADWORKS_URL);
     const out: Roadwork[] = [];
     for (const w of raw) {
       const lat = Number(w.latitude);
       const lng = Number(w.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const rec = w as unknown as Record<string, unknown>;
       out.push({
         id: String(w.roadworks_id ?? `${lat},${lng}`),
-        worksType: w.workstype ?? "",
+        worksType: lf(rec, "workstype", lang),
         start: w.starttime ?? "",
         end: w.endtime ?? "",
-        district: w.district ?? "Unknown",
+        district: lf(rec, "district", lang) || "Unknown",
         lat,
         lng,
-        road: w.roadname ?? "",
-        loc: w.locdesc ?? "",
-        bound: w.bound ?? "",
-        lane: w.lane ?? "",
-        status: w.worksstatus ?? "",
+        road: lf(rec, "roadname", lang),
+        loc: lf(rec, "locdesc", lang),
+        bound: lf(rec, "bound", lang),
+        lane: lf(rec, "lane", lang),
+        status: lf(rec, "worksstatus", lang),
       });
     }
     return out;
@@ -228,9 +240,12 @@ function parseCsv(text: string): string[][] {
 /**
  * Junction blacksites. Coordinates are HK1980 grid (easting/northing),
  * NOT lat/lng — table only, no map.
+ * TC variant probed 2026-10-22:
+ * .../junction_blacksite_list/resources/tc/junctionblacksite_internet_tc.csv
+ * returns 404, so the English file is kept for both langs (chrome notes it).
  */
-export async function blacksiteList(): Promise<Blacksite[]> {
-  return cached("roadextra:blacksites", 24 * 3600_000, async () => {
+export async function blacksiteList(_lang: Locale = "en"): Promise<Blacksite[]> {
+  return cached(`roadextra:blacksites:${_lang}`, 24 * 3600_000, async () => {
     const rows = parseCsv(await fetchText(BLACKSITE_URL));
     return rows.slice(1).map((c) => ({
       type: (c[0] ?? "").trim(),
@@ -253,9 +268,12 @@ export interface RlcSite {
 const RLC_URL =
   "https://www.td.gov.hk/datagovhk_td/junctions-with-rlc/resources/junctions_with_rlc.csv";
 
-/** Red-light-camera junctions. Address only, no coordinates — list only. */
-export async function rlcList(): Promise<RlcSite[]> {
-  return cached("roadextra:rlc", 24 * 3600_000, async () => {
+/** Red-light-camera junctions. Address only, no coordinates — list only.
+ * TC file .../junctions-with-rlc/resources/tc/junctions_with_rlc_tc.csv
+ * returns 404 (probed 2026-10-22); the combined en/tc/sc CSV below is kept
+ * for both langs and the component picks the column by lang. */
+export async function rlcList(_lang: Locale = "en"): Promise<RlcSite[]> {
+  return cached(`roadextra:rlc:${_lang}`, 24 * 3600_000, async () => {
     const rows = parseCsv(await fetchText(RLC_URL));
     return rows
       .slice(1)

@@ -1,4 +1,5 @@
 import { cached, fetchJson, fetchViaRelay } from "../http";
+import type { Locale } from "../locale";
 
 const ONE_STOP_URL = "https://api.data.gov.hk/v1/carpark-info-vacancy";
 const SPS_INFO_URL = "https://sps-opendata.pilotsmartke.gov.hk/rest/getCarparkInfos";
@@ -120,8 +121,8 @@ interface WkcdaVacancy {
 
 interface WkcdaRaw {
   id: string;
-  name?: { en?: string };
-  address?: { en?: string };
+  name?: { en?: string; tc?: string };
+  address?: { en?: string; tc?: string };
   openingStatus?: string;
   heightLimit?: number;
   latitude?: string;
@@ -137,6 +138,9 @@ export interface WkcdaCarpark {
   id: string;
   nameEn: string;
   addressEn: string;
+  /** Display-ready strings resolved for the requested lang (tc variants in tc mode). */
+  name: string;
+  address: string;
   openingStatus: string;
   heightLimit: number | null;
   lat: number | null;
@@ -148,13 +152,22 @@ export interface WkcdaCarpark {
   timestamp: string;
 }
 
-export async function wkcda(): Promise<WkcdaCarpark[]> {
+// WKCDA nests trilingual text as { en, tc, sc } objects rather than the flat
+// *_tc suffixed keys lf() expects, so pick directly here.
+function pickNested(o: { en?: string; tc?: string } | undefined, lang: Locale, fb: string): string {
+  if (lang === "tc") return o?.tc || o?.en || fb;
+  return o?.en || o?.tc || fb;
+}
+
+export async function wkcda(lang: Locale = "en"): Promise<WkcdaCarpark[]> {
   const j = await fetchViaRelay<{ carParks: WkcdaRaw[] }>(WKCDA_URL);
   const list = Array.isArray(j.carParks) ? j.carParks : [];
   return list.map((c) => ({
     id: c.id,
     nameEn: c.name?.en ?? c.id,
     addressEn: c.address?.en ?? "",
+    name: pickNested(c.name, lang, c.id),
+    address: pickNested(c.address, lang, ""),
     openingStatus: c.openingStatus ?? "",
     heightLimit: typeof c.heightLimit === "number" ? c.heightLimit : null,
     lat: c.latitude != null && c.latitude !== "" ? Number(c.latitude) : null,
