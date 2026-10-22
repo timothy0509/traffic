@@ -1,35 +1,32 @@
 # HK Smart Lamppost Traffic
 
-Live web app for Transport Department traffic data from detectors installed at smart lampposts (DATA.GOV.HK). Shows speed, volume and road occupancy across Kwun Tong, Yau Tsim Mong and Wan Chai.
+Live web app for Transport Department traffic data from detectors installed at smart lampposts (DATA.GOV.HK). Speed, volume and road occupancy across Kwun Tong, Yau Tsim Mong and Wan Chai.
 
 Data: https://data.gov.hk/en-data/dataset/hk-td-tis_33-traffic-data-traffic-detectors-installed-at-smart-lampposts
 
 ## Stack
 
-- TypeScript + Bun (API proxy + static server in `server.ts`)
-- Vite + React + Tailwind CSS v4
-- Leaflet (dark basemap, speed-coded detector markers) + lucide-react icons
+- TypeScript + Bun (toolchain) + Vite + React + Tailwind CSS v4
+- Leaflet with OpenStreetMap tiles (no API key) + lucide-react icons
+- No backend. The browser fetches both upstream feeds directly, both send `Access-Control-Allow-Origin: *`
 
 ## How it works
 
-- `GET /api/live` proxies `rawSpeedVol_SLP-all.xml` (30s server cache), parses 30-second periods to JSON
-- `GET /api/detectors` proxies the detector location CSV (1h cache) to JSON
-- Frontend polls `/api/live` every 30s, merges with locations, colors markers by avg speed / occupancy, keeps a per-session speed history for sparklines
+- Live readings: `rawSpeedVol_SLP-all.xml` fetched every 60s, parsed in `src/lib/api.ts`
+- Detector locations: location CSV fetched daily, bundled copy in `src/lib/fallbackDetectors.ts` as offline fallback
+- Last good live reading is kept in `localStorage` so reloads render instantly
 
 ## Run
 
 ```sh
 bun install
-bun server.ts &        # API on :3000 (serves dist/ if built)
-bunx vite              # dev frontend on :5173, proxies /api to :3000
+bun run dev      # http://localhost:5173
+bun run build    # outputs dist/
 ```
 
-Production:
+## Deploy (Vercel)
 
-```sh
-bun run build
-bun server.ts          # serves dist + API on :3000
-```
+Static only. `vercel.json` rewrites everything to `index.html`. Import the repo, framework preset Vite, no env vars needed.
 
 ## Status logic
 

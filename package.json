@@ -4,10 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot server.ts",
-    "dev:vite": "vite",
+    "dev": "vite",
     "build": "vite build",
-    "serve": "bun server.ts",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

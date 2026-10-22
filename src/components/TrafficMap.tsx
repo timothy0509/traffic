@@ -17,8 +17,9 @@ export default function TrafficMap({ detectors, selectedId, onSelect }: { detect
   useEffect(() => {
     if (!divRef.current || mapRef.current) return;
     const map = L.map(divRef.current, { zoomControl: true }).setView([22.296, 114.19], 13);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      attribution: "&copy; OpenStreetMap &copy; CARTO",
+    // OpenStreetMap tiles: no API key needed. CARTO basemaps now require one.
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19,
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);

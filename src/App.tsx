@@ -1,35 +1,42 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RadioTower, RefreshCw } from "lucide-react";
-import { fetchLive, fetchMetas } from "./lib/api";
+import { fetchLive, fetchMetas, getStoredLive } from "./lib/api";
 import { classify, type DetectorMeta, type EnrichedDetector, type LiveResponse } from "./lib/types";
 import TrafficMap from "./components/TrafficMap";
 import StatsBar from "./components/StatsBar";
 import DetectorPanel from "./components/DetectorPanel";
 import DetectorTable from "./components/DetectorTable";
 
-const POLL_MS = 30_000;
+const POLL_MS = 60_000;
 
 export default function App() {
   const [metas, setMetas] = useState<DetectorMeta[]>([]);
-  const [live, setLive] = useState<LiveResponse | null>(null);
+  // Show last stored reading instantly while the fresh fetch runs.
+  const [live, setLive] = useState<LiveResponse | null>(() => getStoredLive());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const historyRef = useRef<Record<string, number[]>>({});
+  const liveRef = useRef<LiveResponse | null>(null);
+  liveRef.current = live;
 
   const load = useCallback(async (first = false) => {
-    try {
-      const [m, l] = await Promise.all([metas.length ? null : fetchMetas(), fetchLive()]);
-      if (m) setMetas(m);
-      setLive(l);
+    // Detector locations and live readings fetch independently, both with
+    // local fallbacks, so one failing feed never blanks the whole page.
+    const [mRes, lRes] = await Promise.allSettled([
+      metas.length ? null : fetchMetas(),
+      fetchLive(),
+    ]);
+    if (mRes.status === "fulfilled" && mRes.value) setMetas(mRes.value);
+    if (lRes.status === "fulfilled") {
+      setLive(lRes.value);
       setLastUpdated(new Date());
       setError(null);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      if (first) setLoading(false);
+    } else if (!liveRef.current) {
+      setError(`Live feed unreachable (${String(lRes.reason)}). Retrying every minute.`);
     }
+    if (first) setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metas.length]);
 
@@ -126,7 +133,7 @@ export default function App() {
 
           <footer className="mt-6 border-t border-white/10 pt-3 text-xs text-slate-500">
             Source: DATA.GOV.HK — Traffic data collected by traffic detectors installed at smart lampposts (Transport Department).
-            Live XML refreshes every minute; this app polls every 30s through a Bun proxy with caching.{" "}
+            The browser fetches the live feed directly every minute; locations fall back to a bundled copy if the CSV is unreachable.{" "}
             <a className="underline" href="https://data.gov.hk/en-data/dataset/hk-td-tis_33-traffic-data-traffic-detectors-installed-at-smart-lampposts">Dataset page</a>
           </footer>
         </>
